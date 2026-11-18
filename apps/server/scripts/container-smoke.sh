@@ -2,8 +2,8 @@
 # Runs the server image as production does (read-only, no capabilities, an
 # arbitrary user, a data directory it can write) and checks that it answers,
 # pairs a phone, keeps tokens out of its log, and exits 0 within seconds of a
-# stop signal. Usage: container-smoke.sh [image]; DOCKER=podman runs it with
-# Podman.
+# stop signal while the phone holds its event stream open. Usage:
+# container-smoke.sh [image]; DOCKER=podman runs it with Podman.
 set -euo pipefail
 
 docker=${DOCKER:-docker}
@@ -14,7 +14,20 @@ base="http://127.0.0.1:$port"
 owner=smoke-owner-token
 digest=$(printf %s "$owner" | sha256sum | cut -d' ' -f1)
 
+events=$(mktemp)
+events_pid=
+
+stop_events() {
+  if [ -n "$events_pid" ]; then
+    kill "$events_pid" 2>/dev/null || true
+    wait "$events_pid" 2>/dev/null || true
+    events_pid=
+  fi
+}
+
 cleanup() {
+  stop_events
+  rm -f "$events"
   "$docker" rm --force "$name" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -67,9 +80,27 @@ status=$(curl -sS -o /dev/null -w '%{http_code}' \
   -H 'Authorization: Bearer wrong' "$base/v1/photos")
 test "$status" = 401
 
+# The phone's event stream stays open until the server ends it, so the stop
+# below shows it doesn't hold the server up. Its first event is the count of
+# agents waiting.
+curl -sSN -H "Authorization: Bearer $phone" "$base/v1/events" \
+  >"$events" 2>/dev/null &
+events_pid=$!
+for _ in $(seq 50); do
+  if grep -Fqx 'event: waiting' "$events"; then
+    break
+  fi
+  sleep 0.1
+done
+if ! grep -Fqx 'event: waiting' "$events"; then
+  echo "The event stream sent no first event within 5 s." >&2
+  exit 1
+fi
+
 started=$(date +%s)
 "$docker" stop --time 10 "$name" >/dev/null
 took=$(($(date +%s) - started))
+stop_events
 exit_code=$("$docker" inspect --format '{{.State.ExitCode}}' "$name")
 if [ "$exit_code" != 0 ] || [ "$took" -gt 6 ]; then
   echo "The server exited $exit_code after $took s instead of 0 within 6 s." >&2
