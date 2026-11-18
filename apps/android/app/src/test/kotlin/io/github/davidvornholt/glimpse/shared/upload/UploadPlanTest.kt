@@ -76,16 +76,34 @@ class UploadPlanTest {
     @Test
     fun `registers again when the server lost the photo, but only once`() {
         val decision = assertIs<UploadPlan.Decision.Update>(failed(UploadStep.Preview, api(404, ApiErrorTag.NotFound)))
-        val reset = decision.change(fresh.copy(registered = true, previewSent = true, originalSent = true))
+        val reset = decision.change(fresh.copy(registered = true, note = "Left one", serverNote = "Left one"))
 
         assertEquals(UploadStep.Register, UploadPlan.nextStep(reset))
-        assertEquals(false, reset.previewSent)
-        assertEquals(false, reset.originalSent)
+        assertEquals(
+            UploadStep.Register,
+            UploadPlan.nextStep(
+                assertIs<UploadPlan.Decision.Update>(failed(UploadStep.Note, api(404, ApiErrorTag.NotFound))).change(reset),
+            ),
+        )
         assertEquals(
             UploadPlan.Decision.Fail(UploadFailure.Rejected),
             failed(UploadStep.Preview, api(404, ApiErrorTag.NotFound), fresh.copy(registered = true, registrations = 2)),
         )
         assertEquals(UploadPlan.Decision.Fail(UploadFailure.Rejected), failed(UploadStep.Register, api(404, ApiErrorTag.NotFound)))
+    }
+
+    @Test
+    fun `leaves a photo deleted on the server deleted`() {
+        val ready = fresh.copy(registered = true, registrations = 1, previewSent = true)
+
+        for ((step, record) in listOf(UploadStep.Original to ready, UploadStep.Note to ready.copy(note = "Later"))) {
+            val decision = assertIs<UploadPlan.Decision.Update>(failed(step, api(404, ApiErrorTag.NotFound), record))
+            val deleted = decision.change(record)
+
+            assertEquals(true, deleted.deletedOnServer)
+            assertNull(UploadPlan.nextStep(deleted))
+            assertEquals(true, deleted.isDone)
+        }
     }
 
     @Test

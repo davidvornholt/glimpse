@@ -25,7 +25,7 @@ object UploadPlan {
 
     fun nextStep(record: CaptureRecord): UploadStep? =
         when {
-            record.failure != null -> null
+            record.failure != null || record.deletedOnServer -> null
             !record.registered -> UploadStep.Register
             record.note != record.serverNote -> UploadStep.Note
             !record.previewSent -> UploadStep.Preview
@@ -100,11 +100,21 @@ object UploadPlan {
             }
 
             ApiErrorTag.NotFound -> {
-                if (step != UploadStep.Register && record.registrations < MAX_REGISTRATIONS) {
-                    // The server lost the photo, perhaps because its data was reset.
-                    Decision.Update { it.copy(registered = false, previewSent = false, originalSent = false) }
-                } else {
-                    Decision.Fail(UploadFailure.Rejected)
+                when {
+                    // An agent could see the photo, so someone deleted it on purpose,
+                    // perhaps with `glimpse delete`, and it mustn't come back.
+                    record.previewSent -> {
+                        Decision.Update { it.copy(deletedOnServer = true) }
+                    }
+
+                    // The server lost a photo it never had the preview of, perhaps because its data was reset.
+                    step != UploadStep.Register && record.registrations < MAX_REGISTRATIONS -> {
+                        Decision.Update { it.copy(registered = false) }
+                    }
+
+                    else -> {
+                        Decision.Fail(UploadFailure.Rejected)
+                    }
                 }
             }
 

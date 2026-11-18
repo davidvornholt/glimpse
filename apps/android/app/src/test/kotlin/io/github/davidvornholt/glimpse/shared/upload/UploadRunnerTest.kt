@@ -133,22 +133,28 @@ class UploadRunnerTest {
         runTest {
             val server = FakeServer()
             val records = MemoryRecords(record())
-            server.failNext(UploadStep.Original, ApiException(404, ApiErrorTag.NotFound, "No such photo"))
+            server.failNext(UploadStep.Preview, ApiException(404, ApiErrorTag.NotFound, "No such photo"))
 
             assertEquals(UploadOutcome.Done, UploadRunner(server, records).run(id))
 
             assertEquals(
-                listOf(
-                    UploadStep.Register,
-                    UploadStep.Preview,
-                    UploadStep.Original,
-                    UploadStep.Register,
-                    UploadStep.Preview,
-                    UploadStep.Original,
-                ),
+                listOf(UploadStep.Register, UploadStep.Preview, UploadStep.Register, UploadStep.Preview, UploadStep.Original),
                 server.calls,
             )
             assertEquals(2, records.records.getValue(id).registrations)
+        }
+
+    @Test
+    fun `doesn't bring back a photo deleted once an agent could see it`() =
+        runTest {
+            val server = FakeServer()
+            val records = MemoryRecords(record())
+            server.failNext(UploadStep.Original, ApiException(404, ApiErrorTag.NotFound, "No such photo"))
+
+            assertEquals(UploadOutcome.Done, UploadRunner(server, records).run(id))
+
+            assertEquals(listOf(UploadStep.Register, UploadStep.Preview, UploadStep.Original), server.calls)
+            assertTrue(records.records.getValue(id).deletedOnServer)
         }
 
     @Test

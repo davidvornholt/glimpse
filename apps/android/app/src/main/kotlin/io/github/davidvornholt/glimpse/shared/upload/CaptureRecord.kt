@@ -29,6 +29,8 @@ data class CaptureRecord(
     val originalSkipped: Boolean = false,
     /** How often the server had lost the registration and the app made it again. */
     val registrations: Int = 0,
+    /** Someone deleted the photo on the server after an agent could see it, so the rest of its upload is moot. */
+    val deletedOnServer: Boolean = false,
     val failure: UploadFailure? = null,
 ) {
     val metadata: PhotoMetadata
