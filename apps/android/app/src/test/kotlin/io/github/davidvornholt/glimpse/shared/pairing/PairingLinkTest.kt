@@ -94,4 +94,11 @@ class PairingLinkTest {
             "http://glimpse.example.com",
         ).forEach { assertNull(PairingLink.normalizeServer(it, allowCleartext = false), it) }
     }
+
+    @Test
+    fun `refuses ports outside 1 to 65535`() {
+        assertNull(parse("glimpse://pair?server=https%3A%2F%2Fglimpse.example.com%3A65536&code=abc"))
+        assertNull(PairingLink.normalizeServer("https://glimpse.example.com:0", allowCleartext = false))
+        assertEquals("https://glimpse.example.com:65535", PairingLink.normalizeServer("https://glimpse.example.com:65535", false))
+    }
 }

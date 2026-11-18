@@ -1,5 +1,6 @@
 package io.github.davidvornholt.glimpse.shared.pairing
 
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.URI
 import java.net.URISyntaxException
 import java.net.URLDecoder
@@ -81,7 +82,8 @@ data class PairingLink(
             if (uri.rawQuery != null || uri.rawFragment != null) return null
             val port = if (uri.port == -1) "" else ":${uri.port}"
             val path = uri.rawPath.orEmpty().trimEnd('/')
-            return "$scheme://${uri.host.lowercase()}$port$path"
+            // java.net.URI takes ports OkHttp refuses, such as 0 and 65536.
+            return "$scheme://${uri.host.lowercase()}$port$path".takeIf { it.toHttpUrlOrNull() != null }
         }
     }
 }
