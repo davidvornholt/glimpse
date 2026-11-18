@@ -132,9 +132,10 @@ jobs:
           trap 'rm -rf "$keystore_dir"' EXIT
           (umask 077 && base64 --decode <<<"$KEYSTORE_BASE64" > "$keystore_dir/release.p12")
           unset KEYSTORE_BASE64
+          # The configuration cache would write the passwords to disk.
           GLIMPSE_KEYSTORE_FILE="$keystore_dir/release.p12" ./gradlew :app:assembleRelease \
             -Pglimpse.versionCode="$VERSION_CODE" -Pglimpse.versionName="$VERSION_NAME" \
-            --no-daemon --console=plain
+            --no-configuration-cache --no-daemon --console=plain
 
       # Android only installs an update signed with the same key, so a release
       # signed with any other key would strand every installed copy.
