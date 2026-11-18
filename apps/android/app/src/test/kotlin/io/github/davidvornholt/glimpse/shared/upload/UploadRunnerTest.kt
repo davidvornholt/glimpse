@@ -158,6 +158,23 @@ class UploadRunnerTest {
         }
 
     @Test
+    fun `waits when the phone can't save how far the upload got`() =
+        runTest {
+            val server = FakeServer()
+            val full =
+                object : CaptureRecords {
+                    override suspend fun get(id: String) = record()
+
+                    override suspend fun update(
+                        id: String,
+                        change: (CaptureRecord) -> CaptureRecord,
+                    ): CaptureRecord = throw IOException("No space left on device")
+                }
+
+            assertEquals(UploadOutcome.RetryLater, UploadRunner(server, full).run(id))
+        }
+
+    @Test
     fun `finishes without an original the server finds too large`() =
         runTest {
             val server = FakeServer()

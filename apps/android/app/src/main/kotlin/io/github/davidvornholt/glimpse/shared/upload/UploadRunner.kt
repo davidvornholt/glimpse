@@ -2,6 +2,7 @@ package io.github.davidvornholt.glimpse.shared.upload
 
 import io.github.davidvornholt.glimpse.shared.api.Photo
 import kotlinx.coroutines.CancellationException
+import java.io.IOException
 
 /** The requests an upload makes, so the runner can be tested without a server. */
 interface UploadTarget {
@@ -38,7 +39,16 @@ class UploadRunner(
     private val records: CaptureRecords,
     private val onProgress: (id: String, step: UploadStep, sent: Long, total: Long) -> Unit = { _, _, _, _ -> },
 ) {
-    suspend fun run(id: String): UploadOutcome {
+    suspend fun run(id: String): UploadOutcome =
+        try {
+            runSteps(id)
+        } catch (_: IOException) {
+            // The phone couldn't save how far the upload got, perhaps because its storage is full.
+            // The server takes each step again, so the next run starts from the last one saved.
+            UploadOutcome.RetryLater
+        }
+
+    private suspend fun runSteps(id: String): UploadOutcome {
         while (true) {
             val record = records.get(id) ?: return UploadOutcome.Gone
             if (record.failure != null) return UploadOutcome.Failed
