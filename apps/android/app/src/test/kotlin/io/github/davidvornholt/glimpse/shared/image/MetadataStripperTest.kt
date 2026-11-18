@@ -70,6 +70,17 @@ class MetadataStripperTest {
         assertFailsWith<IllegalArgumentException> { MetadataStripper.stripJpeg(join(soi, jfif, eoi), orientation = 9) }
     }
 
+    @Test
+    fun `drops embedded thumbnails, which show the photo before any crop`() {
+        // A JFIF header with a 1 by 1 thumbnail of 3 bytes, which goes while the header stays.
+        val withThumbnail = segment(0xE0, join(ascii("JFIF"), bytes(0, 1, 2, 0, 0, 1, 0, 1, 1, 1, 0xAA, 0xBB, 0xCC)))
+        val extension = segment(0xE0, join(ascii("JFXX"), bytes(0, 0x10), ascii("thumbnail")))
+        val other = segment(0xE0, ascii("AVI1 camera data"))
+        val jpeg = join(soi, withThumbnail, extension, other, quantization, scanHeader, scanData, eoi)
+
+        assertContentEquals(join(soi, jfif, quantization, scanHeader, scanData, eoi), MetadataStripper.stripJpeg(jpeg))
+    }
+
     private val pngSignature = bytes(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
 
     private fun chunk(
@@ -108,6 +119,31 @@ class MetadataStripperTest {
             )
 
         assertContentEquals(join(pngSignature, header, profile, data, end), MetadataStripper.stripPng(png))
+    }
+
+    @Test
+    fun `keeps only the PNG chunks that say how to draw it`() {
+        val header = chunk("IHDR", bytes(0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0))
+        val gamma = chunk("gAMA", bytes(0, 0, 0xB1, 0x8F))
+        val density = chunk("pHYs", bytes(0, 0, 0x0B, 0x13, 0, 0, 0x0B, 0x13, 1))
+        val animation = chunk("acTL", bytes(0, 0, 0, 1, 0, 0, 0, 0))
+        val data = chunk("IDAT", bytes(0x78, 0x9C, 0x63, 0x60, 0, 0, 0, 2, 0, 1))
+        val end = chunk("IEND", ByteArray(0))
+        val png =
+            join(
+                pngSignature,
+                header,
+                gamma,
+                chunk("caBX", ascii("content credentials")),
+                density,
+                chunk("meTa", ascii("camera serial")),
+                animation,
+                chunk("prVt", ascii("an app's own data")),
+                data,
+                end,
+            )
+
+        assertContentEquals(join(pngSignature, header, gamma, density, animation, data, end), MetadataStripper.stripPng(png))
     }
 
     @Test
@@ -151,6 +187,14 @@ class MetadataStripperTest {
             stripped.size - 8,
             stripped.copyOfRange(4, 8).foldIndexed(0) { i, sum, b -> sum or ((b.toInt() and 0xFF) shl (8 * i)) },
         )
+    }
+
+    @Test
+    fun `keeps only the WebP chunks that say how to draw it`() {
+        val image = riffChunk("VP8 ", bytes(1, 2, 3, 4))
+        val webp = webp(extendedHeader(0x20), riffChunk("ICCP", ascii("profile")), riffChunk("CAMR", ascii("camera serial")), image)
+
+        assertContentEquals(webp(extendedHeader(0x20), riffChunk("ICCP", ascii("profile")), image), MetadataStripper.stripWebp(webp))
     }
 
     @Test

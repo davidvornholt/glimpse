@@ -5,9 +5,10 @@ import java.io.ByteArrayOutputStream
 
 /**
  * Removes what an image says about where, when and with what it was taken,
- * without decoding it: EXIF (with its location), XMP, IPTC, comments and
- * anything appended after the image, such as a motion photo's video. Color
- * profiles stay, so the image looks the same.
+ * without decoding it: EXIF (with its location), XMP, IPTC, comments,
+ * embedded thumbnails and anything appended after the image, such as a motion
+ * photo's video. PNG and WebP keep only the chunks that say how to draw the
+ * image. Color profiles stay, so the image looks the same.
  */
 object MetadataStripper {
     /**
@@ -73,7 +74,9 @@ object MetadataStripper {
                 out.write(orientationSegment(orientation))
                 orientationWritten = true
             }
-            if (keepsSegment(marker, input, position + 2, segmentEnd)) {
+            if (marker == MARKER_APP0) {
+                writeJfifWithoutThumbnail(input, position + 2, segmentEnd, out)
+            } else if (keepsSegment(marker, input, position + 2, segmentEnd)) {
                 out.write(0xFF)
                 out.write(marker)
                 out.write(input, position, length)
@@ -88,7 +91,7 @@ object MetadataStripper {
         throw IllegalArgumentException("The JPEG has no end marker")
     }
 
-    /** Strips a PNG of its text, time and EXIF chunks and anything after its end. */
+    /** Strips a PNG to the chunks that draw it, which drops text, time, EXIF and anything after its end. */
     fun stripPng(input: ByteArray): ByteArray {
         require(input.size >= PNG_SIGNATURE.size && input.copyOfRange(0, PNG_SIGNATURE.size).contentEquals(PNG_SIGNATURE)) {
             "Not a PNG"
@@ -101,14 +104,15 @@ object MetadataStripper {
             require(length in 0..(input.size - position - PNG_CHUNK_OVERHEAD).toLong()) { "A PNG chunk runs past the end" }
             val type = String(input, position + 4, 4, Charsets.US_ASCII)
             val end = position + PNG_CHUNK_OVERHEAD + length.toInt()
-            if (type !in PNG_DROPPED_CHUNKS) out.write(input, position, end - position)
+            // A critical chunk, one whose name starts in upper case, is part of the image itself.
+            if (type[0].isUpperCase() || type in PNG_KEPT_CHUNKS) out.write(input, position, end - position)
             position = end
             if (type == "IEND") return out.toByteArray()
         }
         throw IllegalArgumentException("The PNG has no end chunk")
     }
 
-    /** Strips a WebP of its EXIF and XMP chunks and clears the flags that announce them. */
+    /** Strips a WebP to the chunks that draw it and clears the flags that announce EXIF and XMP. */
     fun stripWebp(input: ByteArray): ByteArray {
         require(
             input.size >= WEBP_HEADER &&
@@ -125,7 +129,7 @@ object MetadataStripper {
             require(position + RIFF_PREAMBLE + padded <= riffEnd) { "A WebP chunk runs past the end" }
             val end = position + RIFF_PREAMBLE + padded.toInt()
             when (type) {
-                "EXIF", "XMP " -> {}
+                !in WEBP_KEPT_CHUNKS -> {}
 
                 "VP8X" -> {
                     val chunk = input.copyOfRange(position, end)
@@ -155,8 +159,6 @@ object MetadataStripper {
         dataEnd: Int,
     ): Boolean =
         when (marker) {
-            MARKER_APP0 -> true
-
             // APP2 also carries MPF, which points at images after the end that are dropped.
             MARKER_APP2 -> input.startsWith(ICC_PROFILE, dataStart, dataEnd)
 
@@ -167,6 +169,28 @@ object MetadataStripper {
 
             else -> true
         }
+
+    /**
+     * Keeps a JFIF header, which says how to read the colors, without the
+     * thumbnail it may carry. Any other APP0, such as a JFXX thumbnail, goes.
+     */
+    private fun writeJfifWithoutThumbnail(
+        input: ByteArray,
+        dataStart: Int,
+        dataEnd: Int,
+        out: ByteArrayOutputStream,
+    ) {
+        if (dataEnd - dataStart < JFIF_HEADER || !input.startsWith(JFIF, dataStart, dataEnd)) return
+        val header = input.copyOfRange(dataStart, dataStart + JFIF_HEADER)
+        // The thumbnail's width and height, the last two bytes of the header.
+        header[JFIF_HEADER - 2] = 0
+        header[JFIF_HEADER - 1] = 0
+        out.write(0xFF)
+        out.write(MARKER_APP0)
+        out.write(0)
+        out.write(JFIF_HEADER + 2)
+        out.write(header)
+    }
 
     /** Where the entropy-coded data after a start-of-scan header ends. */
     private fun entropyCodedEnd(
@@ -260,11 +284,32 @@ object MetadataStripper {
     private const val MARKER_APP15 = 0xEF
     private const val MARKER_COM = 0xFE
     private val ICC_PROFILE = "ICC_PROFILE\u0000".toByteArray(Charsets.US_ASCII)
+    private val JFIF = "JFIF\u0000".toByteArray(Charsets.US_ASCII)
+    private const val JFIF_HEADER = 14
 
     private val PNG_SIGNATURE = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
     private const val PNG_CHUNK_OVERHEAD = 12
-    private val PNG_DROPPED_CHUNKS = setOf("eXIf", "tEXt", "zTXt", "iTXt", "tIME")
+    private val PNG_KEPT_CHUNKS =
+        setOf(
+            "tRNS",
+            "cHRM",
+            "gAMA",
+            "iCCP",
+            "sBIT",
+            "sRGB",
+            "cICP",
+            "mDCV",
+            "cLLI",
+            "bKGD",
+            "hIST",
+            "pHYs",
+            "sPLT",
+            "acTL",
+            "fcTL",
+            "fdAT",
+        )
 
+    private val WEBP_KEPT_CHUNKS = setOf("VP8X", "VP8 ", "VP8L", "ALPH", "ANIM", "ANMF", "ICCP")
     private const val WEBP_HEADER = 12
     private const val RIFF_PREAMBLE = 8
     private const val VP8X_EXIF = 0x08
