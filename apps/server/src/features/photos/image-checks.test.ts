@@ -69,6 +69,16 @@ describe('withoutMetadata', () => {
     expect(withoutMetadata(bytes(photo))).toEqual(Option.some(bytes(kept)));
   });
 
+  it('keeps APP0 only as the JFIF header and APP14 only as Adobe’s', () => {
+    const thumbnail = segment('\xe0', 'JFXX\x00\x10\xff\xd8\xff\xd9');
+    const ciff = segment('\xe0', 'II\x1a\x00\x00\x00HEAPJPGMOwner: Jane');
+    const adobe = segment('\xee', 'Adobe\x00\x64\x00\x00\x00\x00\x01');
+    const otherApp14 = segment('\xee', 'Owner: Jane');
+    const photo = `\xff\xd8${jfif}${thumbnail}${ciff}${adobe}${otherApp14}${frame}${scan}${end}`;
+    const kept = `\xff\xd8${jfif}${adobe}${frame}${scan}${end}`;
+    expect(withoutMetadata(bytes(photo))).toEqual(Option.some(bytes(kept)));
+  });
+
   it('drops what follows the end, such as a gain map with its own metadata', () => {
     const photo = `\xff\xd8${frame}${scan}${end}\xff\xd8${exif}${frame}${scan}${end}`;
     expect(withoutMetadata(bytes(photo))).toEqual(

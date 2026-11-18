@@ -160,9 +160,10 @@ export const jpegSize = (bytes: Uint8Array): Option.Option<Size> => {
 
 // Segments that describe the photo rather than draw it are dropped: EXIF and
 // XMP (APP1), IPTC (APP13), the maker notes other application segments hold,
-// and comments. The JFIF header (APP0), the colour profile (an APP2 segment
-// named ICC_PROFILE) and Adobe's colour transform (APP14) stay, because they
-// change how the image looks.
+// such as Canon's owner name or a JFXX thumbnail in APP0, and comments. Only
+// the application segments that change how the image looks stay, each known
+// by the name it opens with: the JFIF header (APP0), the colour profile
+// (APP2) and Adobe's colour transform (APP14).
 const firstApplication = 0xe0;
 const lastApplication = 0xef;
 const jfifHeader = 0xe0;
@@ -172,7 +173,11 @@ const comment = 0xfe;
 const endOfImage = 0xd9;
 const lastRestart = 0xd7;
 const stuffedZero = 0x00;
-const iccName = 'ICC_PROFILE\x00';
+const keptApplications = new Map([
+  [jfifHeader, 'JFIF\x00'],
+  [colourSegment, 'ICC_PROFILE\x00'],
+  [adobeTransform, 'Adobe'],
+]);
 
 const keepsSegment = (bytes: Uint8Array, offset: number, marker: number) => {
   if (marker === comment) {
@@ -181,13 +186,10 @@ const keepsSegment = (bytes: Uint8Array, offset: number, marker: number) => {
   if (marker < firstApplication || marker > lastApplication) {
     return true;
   }
-  if (marker === jfifHeader || marker === adobeTransform) {
-    return true;
-  }
+  const name = keptApplications.get(marker);
   return (
-    marker === colourSegment &&
-    latin1(bytes, offset + markerBytes + lengthBytes, iccName.length) ===
-      iccName
+    name !== undefined &&
+    latin1(bytes, offset + markerBytes + lengthBytes, name.length) === name
   );
 };
 

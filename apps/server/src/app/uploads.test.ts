@@ -40,6 +40,25 @@ const putOriginal = (body: Uint8Array<ArrayBuffer>, contentType: string) =>
     body,
   });
 
+/** A JPEG with segments, written as Latin-1 text, put right after its start. */
+const afterStart = (image: Uint8Array<ArrayBuffer>, segments: string) => {
+  const extra = Uint8Array.from(segments, (character) =>
+    character.charCodeAt(0),
+  );
+  const joined = new Uint8Array(image.length + extra.length);
+  joined.set(image.subarray(0, 2));
+  joined.set(extra, 2);
+  joined.set(image.subarray(2), 2 + extra.length);
+  return joined;
+};
+
+const keptPreview = async () => {
+  const response = await server.fetch(`/v1/photos/${id}/preview`, {
+    headers: bearer(testOwnerToken),
+  });
+  return new Uint8Array(await response.arrayBuffer());
+};
+
 describe('registering a photo', () => {
   it('answers 201 the first time and 200 for the same details', async () => {
     const first = await registerPhoto(server, phone, id);
@@ -120,20 +139,31 @@ describe('sending the preview', () => {
   it('keeps it without camera metadata', async () => {
     await registerPhoto(server, phone, id);
     const clean = tinyJpeg(2048, 1536);
-    const exif = Uint8Array.from(
-      '\xff\xe1\x00\x0cExif\x00\x00GPS!',
-      (character) => character.charCodeAt(0),
-    );
-    const tagged = new Uint8Array(clean.length + exif.length);
-    tagged.set(clean.subarray(0, 2));
-    tagged.set(exif, 2);
-    tagged.set(clean.subarray(2), 2 + exif.length);
+    const tagged = afterStart(clean, '\xff\xe1\x00\x0cExif\x00\x00GPS!');
     const response = await putPreview(server, phone, id, tagged);
     expect(decodePhoto(await response.json()).previewBytes).toBe(clean.length);
-    const kept = await server.fetch(`/v1/photos/${id}/preview`, {
-      headers: bearer(testOwnerToken),
-    });
-    expect(new Uint8Array(await kept.arrayBuffer())).toEqual(clean);
+    expect(await keptPreview()).toEqual(clean);
+  });
+
+  it('keeps its JFIF header but not another APP0, such as Canon’s with the owner', async () => {
+    await registerPhoto(server, phone, id);
+    // The JFIF header: version 1.2, square pixels, no thumbnail.
+    const jfif = '\xff\xe0\x00\x10JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00';
+    const owner = 'II\x1a\x00\x00\x00HEAPJPGMOwner: Jane Example';
+    const ciff = `\xff\xe0\x00${String.fromCharCode(owner.length + 2)}${owner}`;
+    const clean = afterStart(tinyJpeg(2048, 1536), jfif);
+    const response = await putPreview(
+      server,
+      phone,
+      id,
+      afterStart(tinyJpeg(2048, 1536), `${jfif}${ciff}`),
+    );
+    expect(response.status).toBe(200);
+    const photo = decodePhoto(await response.json());
+    expect(photo.previewBytes).toBe(clean.length);
+    const kept = await keptPreview();
+    expect(kept).toEqual(clean);
+    expect(new TextDecoder('latin1').decode(kept)).not.toContain('Jane');
   });
 
   it('needs the photo registered first', async () => {
