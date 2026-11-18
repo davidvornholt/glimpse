@@ -21,11 +21,11 @@ A code works once, for ten minutes, and lives only in memory, so a restart forge
 
 The phone makes a ULID for the photo and keeps it across retries.
 
-1. `PUT /v1/photos/{id}` with the metadata registers it. The same metadata again answers 200, so a retry is safe; different metadata answers `Conflict`.
+1. `PUT /v1/photos/{id}` with the metadata registers it and answers 201. Registering it again answers 200 when the fixed details (when and how it was taken, its size, its type and its batch) are the same, so a retry is safe, and `Conflict` when they differ. The note isn't compared, and a repeat doesn't change it: `PATCH /v1/photos/{id}` does.
 2. `PUT /v1/photos/{id}/preview` with a JPEG of at most 2048 px on the longest edge makes the photo ready: it gets `readyAt` and from then on is listed, announced, and returned by waits. The server drops the camera metadata (EXIF, XMP, IPTC, comments) and whatever follows the image's end, such as a gain map, so a preview never says where it was taken even if the phone left that in.
 3. `PUT /v1/photos/{id}/original` with the `originalType` registered for it adds the full file, metadata and all. The phone sends it after the preview, so the agent can look sooner.
 
-A photo whose preview hasn't arrived after a day is deleted. Every photo is deleted `GLIMPSE_RETENTION_DAYS` (30) days after it was registered, which `expiresAt` says. The server sweeps at start-up, before it answers, and every hour.
+A photo whose preview hasn't arrived after a day is deleted. Every photo is deleted `GLIMPSE_RETENTION_DAYS` (30) days after it was registered, which `expiresAt` says. The server sweeps at start-up, before it answers, and every hour, and a photo it couldn't delete is tried again at the next sweep.
 
 ## Looking at photos
 
@@ -35,7 +35,7 @@ A photo whose preview hasn't arrived after a day is deleted. Every photo is dele
 
 ## Events
 
-`GET /v1/events` is a server-sent event stream with a comment every 20 seconds to keep proxies from closing it.
+`GET /v1/events` is a server-sent event stream with a comment every 20 seconds to keep proxies from closing it. A phone's stream ends when the owner removes the phone.
 
 - `photo`: a ready photo arrived or changed, such as a new note, its original, or its first view. Photos still waiting for their preview aren't announced.
 - `photo-deleted`: a photo was deleted or expired.

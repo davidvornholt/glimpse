@@ -105,8 +105,8 @@ const local = (parts: WallClock, bound: Bound) =>
 /**
  * The ISO instant a person means by a time: an age before now, a day or a
  * wall-clock time in this machine's time zone, or an instant with an offset.
- * As the end of a range, a bare day means its last moment, so
- * `--to 2026-11-14` includes that whole day.
+ * As the end of a range, a bare day means its last moment, so the range
+ * includes that whole day.
  */
 export const parseTime = (flag: string, value: string, bound: Bound) =>
   Effect.gen(function* () {

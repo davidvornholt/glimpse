@@ -30,10 +30,12 @@ Put it behind a reverse proxy that serves HTTPS at `GLIMPSE_PUBLIC_URL`, ideally
 
 ## Install the CLI
 
-With Nix, the flake's default package installs `glimpse` and puts the skill in `share/glimpse/skills`:
+With Nix, the flake's default package installs `glimpse` and puts the skill in `share/glimpse/skills`. Link the skill to where your agent finds skills, such as `~/.agents/skills`:
 
 ```sh
 nix profile install github:davidvornholt/glimpse
+mkdir -p ~/.agents/skills
+ln -s ~/.nix-profile/share/glimpse/skills/glimpse ~/.agents/skills/glimpse
 ```
 
 Without Nix, build it with [Bun](https://bun.sh); this puts `glimpse` in `~/.local/bin` and the skill in `~/.agents/skills`:

@@ -4,8 +4,7 @@ name: Publish container
 # builds the image while Standards checks the same commit, pushes it under the
 # commit's SHA, and smoke-tests the pushed digest. The gate job confirms that
 # Standards passed on that exact commit, because a squash commit on main is new
-# and the pull request's checks do not cover it; a release job will hand the
-# digest to production once both pass.
+# and the pull request's checks do not cover it.
 on:
   pull_request:
   push:

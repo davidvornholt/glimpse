@@ -1,6 +1,6 @@
 # Glimpse server
 
-The server keeps the photos a phone sends until an agent fetches them, and deletes each one after the retention period, 30 days unless configured otherwise. The API is defined in `packages/api` and described in [docs/api.md](../../docs/api.md).
+The server keeps the photos a phone sends and deletes each one after the retention period, 30 days unless configured otherwise. The API is defined in `packages/api` and described in [docs/api.md](../../docs/api.md).
 
 ## Run it for development
 
@@ -9,10 +9,11 @@ cd apps/server
 bun run dev
 ```
 
-It listens on `127.0.0.1:8787`, keeps its data in `apps/server/.data`, and accepts the owner token `dev-owner-token`. Pairing links point at `http://10.0.2.2:8787`, the address under which an Android emulator reaches the host's loopback, so a phone in the emulator can scan a code made with:
+It listens on `127.0.0.1:8787`, keeps its data in `apps/server/.data`, and accepts the owner token `dev-owner-token`. Pairing links point at `http://10.0.2.2:8787`, the address under which an Android emulator reaches the host's loopback, so the app in an emulator can pair with it. Make a pairing link and open it in the emulator, which hands it to the app as a scanned code would:
 
 ```sh
-curl -s -X POST -H 'Authorization: Bearer dev-owner-token' http://127.0.0.1:8787/v1/pairings
+link=$(curl -s -X POST -H 'Authorization: Bearer dev-owner-token' http://127.0.0.1:8787/v1/pairings | jq -r .link)
+adb shell "am start -a android.intent.action.VIEW -d '$link'"
 ```
 
 `PORT` changes the port it listens on and the one in pairing links; `GLIMPSE_HOST` changes the address it listens on. Delete `apps/server/.data` to start over.
@@ -32,7 +33,7 @@ curl -s -X POST -H 'Authorization: Bearer dev-owner-token' http://127.0.0.1:8787
 Make an owner token and its digest with:
 
 ```sh
-token="go_$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
+token="go_$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')"
 printf %s "$token" | sha256sum | cut -d' ' -f1
 ```
 
