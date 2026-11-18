@@ -39,3 +39,7 @@ printf %s "$token" | sha256sum | cut -d' ' -f1
 ## Storage
 
 Each photo is a directory under `photos/<id>/` holding `meta.json`, `preview.jpg`, and the original. Paired phones are in `devices.json`, which keeps only the SHA-256 of each phone's token. Every file is written to a temporary name and renamed, so a crash never leaves half a file in place. At start-up the server loads every photo, skips records it can't read with a warning, and deletes leftover drafts.
+
+## Container image
+
+The `Dockerfile` at the repository root builds an image that holds only the compiled server, runs as an unprivileged user, and keeps its data in `/data`. `scripts/container-smoke.sh [image]` runs an image the way production does, read-only and without capabilities, and checks that it pairs a phone, keeps tokens out of its log, and exits 0 within seconds of a stop signal; CI runs it on every pull request and before an image can be released.

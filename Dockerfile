@@ -19,10 +19,14 @@ RUN bun run --cwd apps/server build
 
 FROM docker.io/library/alpine:3.22 AS runner
 
-RUN apk add --no-cache libgcc libstdc++
+RUN apk add --no-cache libgcc libstdc++ \
+  && install -d -o 65532 -g 65532 -m 0700 /data
 
 COPY --from=build /app/apps/server/dist/glimpse-server /usr/local/bin/glimpse-server
 
+# A new named volume mounted at /data takes this directory's owner, so the
+# default user can write to it. Run with another --user only with a data
+# directory that user owns.
 ENV GLIMPSE_DATA_DIR=/data
 ENV PORT=8787
 EXPOSE 8787
