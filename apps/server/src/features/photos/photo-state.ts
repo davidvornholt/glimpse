@@ -58,15 +58,29 @@ export const makePhotoState = Effect.gen(function* () {
     });
 
   /**
-   * Deletes a photo's files and record. Call it holding the lock. The record
-   * stays when its files can't all be deleted, so deleting again tries again.
+   * Deletes a photo's files and record. Call it holding the lock. The record,
+   * `meta.json`, goes last, so when the other files can't all be deleted it
+   * stays in memory and on disk, and deleting again or the next start tries
+   * again.
    */
   const forget = (photo: StoredPhoto) =>
     Effect.gen(function* () {
-      yield* disk.fs.remove(files(photo).directory, {
-        recursive: true,
-        force: true,
-      });
+      const { directory, meta } = files(photo);
+      const entries = yield* disk.fs
+        .readDirectory(directory)
+        .pipe(
+          Effect.catchReason('PlatformError', 'NotFound', () =>
+            Effect.succeed<ReadonlyArray<string>>([]),
+          ),
+        );
+      yield* Effect.forEach(
+        entries
+          .map((entry) => disk.path.join(directory, entry))
+          .filter((file) => file !== meta),
+        (file) => disk.fs.remove(file, { recursive: true, force: true }),
+        { discard: true },
+      );
+      yield* disk.fs.remove(directory, { recursive: true, force: true });
       yield* Ref.update(photos, (current) => {
         const next = new Map(current);
         next.delete(photo.id);

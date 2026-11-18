@@ -204,21 +204,53 @@ describe('changing photos', () => {
   });
 });
 
+const restart = async () => {
+  await server.stop();
+  server = await startTestServer({ dataDirectory: server.dataDirectory });
+};
+
+const backdate = async (id: string, field: string) => {
+  const file = join(server.dataDirectory, 'photos', id, 'meta.json');
+  const record = JSON.parse(await readFile(file, 'utf8'));
+  record[field] = DateTime.formatIso(
+    DateTime.subtract(DateTime.nowUnsafe(), { days: 2 }),
+  );
+  await writeFile(file, JSON.stringify(record));
+};
+
+const exists = (file: string) =>
+  stat(file).then(
+    () => true,
+    () => false,
+  );
+
+const onDisk = (id: string) => exists(join(server.dataDirectory, 'photos', id));
+
+/** Waits up to two seconds for the photo's folder to go. */
+const goneFromDisk = async (id: string, deadline = Date.now() + 2000) => {
+  if (!(await onDisk(id)) || Date.now() > deadline) {
+    return !(await onDisk(id));
+  }
+  await Bun.sleep(10);
+  return goneFromDisk(id, deadline);
+};
+
+/**
+ * Puts a folder that nothing may be deleted from in the photo's folder, which
+ * makes deleting the photo fail until the returned `unlock` is called.
+ */
+const lock = async (id: string) => {
+  const locked = join(server.dataDirectory, 'photos', id, 'locked');
+  await mkdir(locked);
+  await writeFile(join(locked, 'file'), '');
+  await chmod(locked, 0o500);
+  return {
+    locked,
+    unlock: () => chmod(locked, 0o700).catch(() => undefined),
+  };
+};
+
 describe('retention', () => {
-  const restart = async () => {
-    await server.stop();
-    server = await startTestServer({ dataDirectory: server.dataDirectory });
-  };
-
-  const backdate = async (id: string, field: string) => {
-    const file = join(server.dataDirectory, 'photos', id, 'meta.json');
-    const record = JSON.parse(await readFile(file, 'utf8'));
-    record[field] = DateTime.formatIso(
-      DateTime.subtract(DateTime.nowUnsafe(), { days: 2 }),
-    );
-    await writeFile(file, JSON.stringify(record));
-  };
-
   it('keeps photos across a restart', async () => {
     await sendPhoto(server, phone, testPhotoId(1));
     await restart();
@@ -246,21 +278,6 @@ describe('retention', () => {
     expect((await get(`/v1/photos/${id}`)).status).toBe(404);
   });
 
-  const onDisk = (id: string) =>
-    stat(join(server.dataDirectory, 'photos', id)).then(
-      () => true,
-      () => false,
-    );
-
-  /** Waits up to two seconds for the photo's folder to go. */
-  const goneFromDisk = async (id: string, deadline = Date.now() + 2000) => {
-    if (!(await onDisk(id)) || Date.now() > deadline) {
-      return !(await onDisk(id));
-    }
-    await Bun.sleep(10);
-    return goneFromDisk(id, deadline);
-  };
-
   it('deletes the other photos when one fails, and that one an hour later', async () => {
     await server.close();
     server = await startTestServer({ testClock: true, retentionDays: 1 });
@@ -269,13 +286,7 @@ describe('retention', () => {
     const other = testPhotoId(2);
     await sendPhoto(server, phone, stuck);
     await sendPhoto(server, phone, other);
-    // A folder in the photo's folder that nothing may be deleted from makes
-    // deleting the photo fail, until it may again.
-    const locked = join(server.dataDirectory, 'photos', stuck, 'locked');
-    await mkdir(locked);
-    await writeFile(join(locked, 'file'), '');
-    await chmod(locked, 0o500);
-    const unlock = () => chmod(locked, 0o700).catch(() => undefined);
+    const { locked, unlock } = await lock(stuck);
     try {
       await expect(rm(join(locked, 'file'))).rejects.toThrow('EACCES');
 
@@ -288,6 +299,31 @@ describe('retention', () => {
       await server.adjustClock('1 hour');
       expect(await goneFromDisk(stuck)).toBe(true);
       expect((await get(`/v1/photos/${stuck}`)).status).toBe(404);
+    } finally {
+      // Lets the test's data be deleted, however the test went.
+      await unlock();
+    }
+  });
+
+  it('keeps a photo it could not delete across a restart, and deletes it at a later start', async () => {
+    const id = testPhotoId(1);
+    await sendPhoto(server, phone, id);
+    await backdate(id, 'expiresAt');
+    const meta = join(server.dataDirectory, 'photos', id, 'meta.json');
+    const { locked, unlock } = await lock(id);
+    try {
+      await expect(rm(join(locked, 'file'))).rejects.toThrow('EACCES');
+
+      await restart();
+      expect((await get(`/v1/photos/${id}`)).status).toBe(200);
+      expect(await exists(meta)).toBe(true);
+      await restart();
+      expect((await get(`/v1/photos/${id}`)).status).toBe(200);
+
+      await unlock();
+      await restart();
+      expect((await get(`/v1/photos/${id}`)).status).toBe(404);
+      expect(await onDisk(id)).toBe(false);
     } finally {
       // Lets the test's data be deleted, however the test went.
       await unlock();
