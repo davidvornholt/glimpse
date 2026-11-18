@@ -108,7 +108,9 @@ export const PhotosLive = HttpApiBuilder.group(
             ),
           );
           return { photos: yield* store.unviewedAfter(query.after) };
-        }).pipe(Effect.scoped),
+          // Interruptible, so a CLI that gives up, or a server that stops,
+          // ends the wait at once and the phone stops counting it.
+        }).pipe(Effect.scoped, Effect.interruptible),
       get: ({ params }) => store.get(params.id),
       getPreview: ({ params }) => image(params.id, 'preview'),
       getOriginal: ({ params }) => image(params.id, 'original'),

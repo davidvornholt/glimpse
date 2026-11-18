@@ -1,7 +1,7 @@
 import { BunHttpServer, BunRuntime } from '@effect/platform-bun';
 import { defaultRetentionDays } from '@glimpse/api/photo';
 import { Config, Effect, Layer } from 'effect';
-import { defaultPort, ServerConfig } from '../shared/config.ts';
+import { defaultPort, ServerConfig, shutdownGrace } from '../shared/config.ts';
 import { tokenDigest } from '../shared/tokens.ts';
 import { serve } from './server.ts';
 
@@ -28,6 +28,7 @@ const listen = Config.all({
   hostname: Config.NonEmptyString('GLIMPSE_HOST').pipe(
     Config.withDefault('127.0.0.1'),
   ),
+  gracefulShutdownTimeout: Config.succeed(shutdownGrace),
 });
 
 serve(settings).pipe(

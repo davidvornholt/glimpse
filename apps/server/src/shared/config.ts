@@ -1,5 +1,5 @@
 import { defaultRetentionDays } from '@glimpse/api/photo';
-import { Config, Context, Effect, Layer } from 'effect';
+import { Config, Context, Duration, Effect, Layer } from 'effect';
 
 export type ServerSettings = {
   /** Where photos and paired devices are kept. */
@@ -63,9 +63,17 @@ const sha256Hex = /^[0-9a-f]{64}$/u;
 
 export const defaultPort = 8787;
 
+/**
+ * How long a stopping server lets requests finish before it cuts them off.
+ * Waits and event streams would otherwise hold it up for a minute or for
+ * ever; the phone and the CLI retry what was cut off.
+ */
+export const shutdownGrace = Duration.fromInputUnsafe('3 seconds');
+
 export const listenOptions = Config.all({
   port: Config.Port('PORT').pipe(Config.withDefault(defaultPort)),
   hostname: Config.NonEmptyString('GLIMPSE_HOST').pipe(
     Config.withDefault('0.0.0.0'),
   ),
+  gracefulShutdownTimeout: Config.succeed(shutdownGrace),
 });
