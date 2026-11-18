@@ -37,6 +37,10 @@
     <string name="capture_note_discard">Discard note</string>
     <string name="capture_failed">Couldn’t take the photo. Try again.</string>
     <string name="scan_failed">Couldn’t add the scan. Try scanning again.</string>
+    <plurals name="scan_partial">
+        <item quantity="one">Added %1$d of %2$d page. Scan the missing ones again.</item>
+        <item quantity="other">Added %1$d of %2$d pages. Scan the missing ones again.</item>
+    </plurals>
     <string name="scanner_unavailable">The document scanner isn’t ready yet. Make sure Google Play services is up to date, then try again.</string>
     <string name="status_offline">Offline</string>
     <plurals name="agents_waiting">
@@ -168,7 +172,18 @@
     <string name="share_note_label">Add a note (optional)</string>
     <string name="share_send">Send</string>
     <string name="share_sent">Sent</string>
-    <string name="share_failed">Couldn’t read the images. Share them again from the other app.</string>
+    <plurals name="share_partial_title">
+        <item quantity="one">Sent %1$d of %2$d image</item>
+        <item quantity="other">Sent %1$d of %2$d images</item>
+    </plurals>
+    <plurals name="share_partial_body">
+        <item quantity="one">%d image couldn’t be read. Share it again from the other app.</item>
+        <item quantity="other">%d images couldn’t be read. Share them again from the other app.</item>
+    </plurals>
+    <plurals name="share_failed">
+        <item quantity="one">Couldn’t read the image. Share it again from the other app.</item>
+        <item quantity="other">Couldn’t read the images. Share them again from the other app.</item>
+    </plurals>
     <string name="share_not_paired_title">Pair Glimpse first</string>
     <string name="share_not_paired_body">Open Glimpse and pair it with your server, then share again.</string>
     <string name="share_open_app">Open Glimpse</string>

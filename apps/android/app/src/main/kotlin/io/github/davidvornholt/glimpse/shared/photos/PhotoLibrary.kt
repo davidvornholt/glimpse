@@ -149,13 +149,14 @@ class PhotoLibrary(
 
     /**
      * Takes in images from another app or the document scanner. They share
-     * one batch when there are several, as the pages of a scan do.
+     * one batch when there are several, as the pages of a scan do. An image
+     * that can't be read is skipped, and the result says how many were.
      */
     suspend fun addImages(
         uris: List<Uri>,
         source: PhotoSource,
         note: String?,
-    ): Int {
+    ): ImportResult {
         val batchId = if (uris.size > 1 || source == PhotoSource.Scan) ids.next() else null
         var added = 0
         for (uri in uris) {
@@ -181,12 +182,11 @@ class PhotoLibrary(
                 uploads.enqueue(id)
                 if (source == PhotoSource.Scan) keepCopyIfWanted(original, prepared.type, id)
                 added++
-            } catch (error: IOException) {
+            } catch (_: IOException) {
                 captures.remove(id)
-                if (uris.size == 1) throw error
             }
         }
-        return added
+        return ImportResult(added, uris.size)
     }
 
     private suspend fun keepCopyIfWanted(

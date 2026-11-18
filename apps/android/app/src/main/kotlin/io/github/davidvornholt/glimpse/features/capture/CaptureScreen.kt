@@ -169,10 +169,10 @@ fun CaptureScreen(
         rememberDocumentScanner(
             onPages = { pages ->
                 appScope.launch {
-                    try {
-                        library.addImages(pages, PhotoSource.Scan, settingsStore.takePendingNote())
-                    } catch (_: IOException) {
-                        snackbar.showSnackbar(messages.scanFailed)
+                    val result = library.addImages(pages, PhotoSource.Scan, settingsStore.takePendingNote())
+                    when {
+                        result.isPartial -> snackbar.showSnackbar(messages.scanPartial(result.added, result.total))
+                        !result.isComplete -> snackbar.showSnackbar(messages.scanFailed)
                     }
                 }
             },
@@ -457,12 +457,14 @@ private class CaptureMessages(
     val scanFailed: String,
     val scannerUnavailable: String,
     val noteFailed: String,
+    val scanPartial: (added: Int, total: Int) -> String,
 ) {
     companion object {
         fun from(context: Context) =
             CaptureMessages(
                 captureFailed = context.getString(R.string.capture_failed),
                 scanFailed = context.getString(R.string.scan_failed),
+                scanPartial = { added, total -> context.resources.getQuantityString(R.plurals.scan_partial, total, added, total) },
                 scannerUnavailable = context.getString(R.string.scanner_unavailable),
                 noteFailed = context.getString(R.string.note_save_failed),
             )

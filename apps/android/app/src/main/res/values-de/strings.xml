@@ -36,6 +36,10 @@
     <string name="capture_note_discard">Notiz verwerfen</string>
     <string name="capture_failed">Das Foto ließ sich nicht aufnehmen. Versuch es noch einmal.</string>
     <string name="scan_failed">Der Scan ließ sich nicht hinzufügen. Scanne noch einmal.</string>
+    <plurals name="scan_partial">
+        <item quantity="one">%1$d von %2$d Seite hinzugefügt. Scanne die fehlenden noch einmal.</item>
+        <item quantity="other">%1$d von %2$d Seiten hinzugefügt. Scanne die fehlenden noch einmal.</item>
+    </plurals>
     <string name="scanner_unavailable">Der Dokumentscanner ist noch nicht bereit. Aktualisiere die Google Play-Dienste und versuch es dann noch einmal.</string>
     <string name="status_offline">Offline</string>
     <plurals name="agents_waiting">
@@ -167,7 +171,18 @@
     <string name="share_note_label">Notiz hinzufügen (optional)</string>
     <string name="share_send">Senden</string>
     <string name="share_sent">Gesendet</string>
-    <string name="share_failed">Die Bilder ließen sich nicht lesen. Teile sie noch einmal aus der anderen App.</string>
+    <plurals name="share_partial_title">
+        <item quantity="one">%1$d von %2$d Bild gesendet</item>
+        <item quantity="other">%1$d von %2$d Bildern gesendet</item>
+    </plurals>
+    <plurals name="share_partial_body">
+        <item quantity="one">%d Bild ließ sich nicht lesen. Teile es noch einmal aus der anderen App.</item>
+        <item quantity="other">%d Bilder ließen sich nicht lesen. Teile sie noch einmal aus der anderen App.</item>
+    </plurals>
+    <plurals name="share_failed">
+        <item quantity="one">Das Bild ließ sich nicht lesen. Teile es noch einmal aus der anderen App.</item>
+        <item quantity="other">Die Bilder ließen sich nicht lesen. Teile sie noch einmal aus der anderen App.</item>
+    </plurals>
     <string name="share_not_paired_title">Kopple Glimpse zuerst</string>
     <string name="share_not_paired_body">Öffne Glimpse und kopple es mit deinem Server. Teile die Bilder dann noch einmal.</string>
     <string name="share_open_app">Glimpse öffnen</string>

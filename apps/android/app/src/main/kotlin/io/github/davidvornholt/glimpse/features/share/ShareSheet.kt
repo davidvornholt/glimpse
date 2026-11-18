@@ -55,12 +55,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import io.github.davidvornholt.glimpse.R
 import io.github.davidvornholt.glimpse.shared.haptics.Haptics
+import io.github.davidvornholt.glimpse.shared.photos.ImportResult
 import io.github.davidvornholt.glimpse.shared.ui.NoteField
 import io.github.davidvornholt.glimpse.shared.ui.PhotoImage
 import kotlinx.coroutines.delay
-import java.io.IOException
 
-private enum class Stage { Editing, Sending, Sent, Failed }
+private enum class Stage { Editing, Sending, Sent, Partial, Failed }
 
 /**
  * Sends images shared from another app, with an optional note. The images
@@ -71,7 +71,7 @@ fun ShareSheet(
     images: List<Uri>,
     paired: Boolean,
     haptics: Haptics,
-    send: suspend (images: List<Uri>, note: String?) -> Int,
+    send: suspend (images: List<Uri>, note: String?) -> ImportResult,
     onOpenApp: () -> Unit,
     onFinish: () -> Unit,
 ) {
@@ -80,33 +80,41 @@ fun ShareSheet(
     val note = rememberTextFieldState()
     var stage by remember { mutableStateOf(Stage.Editing) }
     var sending by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf(ImportResult(0, images.size)) }
     val finish by rememberUpdatedState(onFinish)
     val sendImages by rememberUpdatedState(send)
     LaunchedEffect(sending) {
         if (!sending) return@LaunchedEffect
         stage = Stage.Sending
-        val added =
-            try {
-                sendImages(
-                    images,
-                    note.text
-                        .toString()
-                        .trim()
-                        .ifEmpty { null },
-                )
-            } catch (_: IOException) {
-                0
+        result =
+            sendImages(
+                images,
+                note.text
+                    .toString()
+                    .trim()
+                    .ifEmpty { null },
+            )
+        when {
+            result.isComplete -> {
+                stage = Stage.Sent
+                haptics.success(view)
+                delay(SENT_MILLIS)
+                sheetState.hide()
+                finish()
             }
-        if (added > 0) {
-            stage = Stage.Sent
-            haptics.success(view)
-            delay(SENT_MILLIS)
-            sheetState.hide()
-            finish()
-        } else {
-            stage = Stage.Failed
-            haptics.reject(view)
-            sending = false
+
+            // The images that were read are on their way, so the sheet says how
+            // many weren't rather than offering to send all of them again.
+            result.isPartial -> {
+                stage = Stage.Partial
+                haptics.reject(view)
+            }
+
+            else -> {
+                stage = Stage.Failed
+                haptics.reject(view)
+                sending = false
+            }
         }
     }
     ModalBottomSheet(onDismissRequest = { if (stage != Stage.Sending) onFinish() }, sheetState = sheetState) {
@@ -138,7 +146,7 @@ fun ShareSheet(
                             NoteField(note, label = stringResource(R.string.share_note_label))
                             if (shown == Stage.Failed) {
                                 Text(
-                                    stringResource(R.string.share_failed),
+                                    pluralStringResource(R.plurals.share_failed, images.size),
                                     color = MaterialTheme.colorScheme.error,
                                     style = MaterialTheme.typography.bodyMedium,
                                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
@@ -174,8 +182,39 @@ fun ShareSheet(
                             Text(stringResource(R.string.share_sent), style = MaterialTheme.typography.titleMedium)
                         }
                     }
+
+                    Stage.Partial -> {
+                        Partial(result, onFinish)
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun Partial(
+    result: ImportResult,
+    onFinish: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Assertive },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            pluralStringResource(R.plurals.share_partial_title, result.total, result.added, result.total),
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            pluralStringResource(R.plurals.share_partial_body, result.failed, result.failed),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Button(onClick = onFinish) { Text(stringResource(R.string.action_close)) }
         }
     }
 }
