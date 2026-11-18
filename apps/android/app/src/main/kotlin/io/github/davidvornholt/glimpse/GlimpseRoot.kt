@@ -62,6 +62,7 @@ import io.github.davidvornholt.glimpse.shared.network.LocalNetwork
 import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import io.github.davidvornholt.glimpse.shared.photos.Connection
 import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
+import io.github.davidvornholt.glimpse.shared.settings.CaptureMode
 import io.github.davidvornholt.glimpse.shared.settings.Session
 import io.github.davidvornholt.glimpse.shared.settings.SessionState
 import io.github.davidvornholt.glimpse.shared.ui.LocalSharedTransitionScope
@@ -189,11 +190,12 @@ private fun PairedContent(
         if (!LocalNetwork.isAllowed(context) && LocalNetwork.isLocal(host)) localNetwork.launch(LocalNetwork.PERMISSION)
     }
 
-    // A shortcut or the tile asked for the camera: put it in front.
+    // A shortcut or the tile asked for the camera: put it in front, ready for a photo even if scanning was last.
     LaunchedEffect(requests.camera) {
         if (requests.camera > 0) {
             viewerOpen = false
             settingsOpen = false
+            graph.settings.setMode(CaptureMode.Photo)
             sheet.partialExpand()
         }
     }
