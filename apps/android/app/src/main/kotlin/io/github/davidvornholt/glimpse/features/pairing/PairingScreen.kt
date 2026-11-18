@@ -3,6 +3,8 @@ package io.github.davidvornholt.glimpse.features.pairing
 import android.os.Build
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -94,6 +96,7 @@ import androidx.graphics.shapes.RoundedPolygon
 import io.github.davidvornholt.glimpse.R
 import io.github.davidvornholt.glimpse.shared.api.ApiException
 import io.github.davidvornholt.glimpse.shared.haptics.Haptics
+import io.github.davidvornholt.glimpse.shared.network.LocalNetwork
 import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import io.github.davidvornholt.glimpse.shared.settings.Session
 import io.github.davidvornholt.glimpse.shared.ui.CameraPermissionPrompt
@@ -159,17 +162,37 @@ fun PairingScreen(
     BackHandler(enabled = canGoBack) { step = Step.Welcome }
     BackHandler(enabled = step == Step.Welcome && onCancel != null) { onCancel?.invoke() }
 
+    val runClaim: suspend (PairingLink, String) -> Unit = { link, name ->
+        step =
+            try {
+                Step.Done(claimer.claim(link, name))
+            } catch (error: ApiException) {
+                Step.Failed(link, PairingClaimer.failureOf(error))
+            } catch (error: IOException) {
+                Step.Failed(link, PairingClaimer.failureOf(error))
+            }
+    }
+    val context = LocalContext.current
+    var waitingForPermission by remember { mutableStateOf<Pair<PairingLink, String>?>(null) }
+    val localNetwork =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val (link, name) = waitingForPermission ?: return@rememberLauncherForActivityResult
+            waitingForPermission = null
+            if (granted) {
+                scope.launch { runClaim(link, name) }
+            } else {
+                step = Step.Failed(link, PairingFailure.LocalNetworkDenied)
+            }
+        }
     val claim: (PairingLink, String) -> Unit = { link, name ->
         step = Step.Claiming(link)
         scope.launch {
-            step =
-                try {
-                    Step.Done(claimer.claim(link, name))
-                } catch (error: ApiException) {
-                    Step.Failed(link, PairingClaimer.failureOf(error))
-                } catch (error: IOException) {
-                    Step.Failed(link, PairingClaimer.failureOf(error))
-                }
+            if (!LocalNetwork.isAllowed(context) && LocalNetwork.isLocal(link.host)) {
+                waitingForPermission = link to name
+                localNetwork.launch(LocalNetwork.PERMISSION)
+            } else {
+                runClaim(link, name)
+            }
         }
     }
 
@@ -229,7 +252,11 @@ fun PairingScreen(
                 is Step.Failed -> {
                     Failed(
                         step = shown,
-                        onRetry = { step = if (shown.failure == PairingFailure.Rejected) Step.Confirming(shown.link) else Step.Welcome },
+                        onRetry = {
+                            // A used-up code needs a new one; otherwise the same link may work now.
+                            val needsNewCode = shown.failure == PairingFailure.CodeExpired || shown.failure == PairingFailure.TooManyTries
+                            step = if (needsNewCode) Step.Welcome else Step.Confirming(shown.link)
+                        },
                         onCancel = onCancel,
                     )
                 }
@@ -491,6 +518,7 @@ private fun Failed(
             PairingFailure.TooManyTries -> stringResource(R.string.pairing_failed_tries)
             PairingFailure.Rejected -> stringResource(R.string.pairing_failed_rejected)
             PairingFailure.Unreachable -> stringResource(R.string.pairing_failed_unreachable, step.link.host)
+            PairingFailure.LocalNetworkDenied -> stringResource(R.string.pairing_failed_local_network, step.link.host)
             PairingFailure.Unknown -> stringResource(R.string.pairing_failed_unknown)
         }
     Page {
@@ -510,6 +538,12 @@ private fun Failed(
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
         )
         Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.pairing_try_again)) }
+        if (step.failure == PairingFailure.LocalNetworkDenied) {
+            val context = LocalContext.current
+            OutlinedButton(onClick = { LocalNetwork.openSettings(context) }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.pairing_open_settings))
+            }
+        }
         if (onCancel != null) {
             TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }
         }

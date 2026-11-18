@@ -23,6 +23,9 @@ enum class PairingFailure {
     /** The server couldn't be reached, or isn't a Glimpse server. */
     Unreachable,
 
+    /** The server is on the local network, which the person didn't let the app reach. */
+    LocalNetworkDenied,
+
     Unknown,
 }
 
