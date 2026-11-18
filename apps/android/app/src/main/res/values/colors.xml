@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#FF3B37B0</color>
+    <color name="shortcut_background">#FFE6E3FF</color>
+    <color name="shortcut_foreground">#FF2A2675</color>
+    <color name="viewfinder">#FF000000</color>
+</resources>

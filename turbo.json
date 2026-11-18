@@ -28,6 +28,28 @@
     "test:a11y": {
       "dependsOn": ["build"],
       "cache": false
+    },
+    "@glimpse/android#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["app/build/outputs/apk/**"],
+      "passThroughEnv": [
+        "ANDROID_HOME",
+        "ANDROID_SDK_ROOT",
+        "JAVA_HOME",
+        "GRADLE_OPTS",
+        "GRADLE_USER_HOME"
+      ]
+    },
+    "@glimpse/android#test": {
+      "dependsOn": ["@glimpse/android#build"],
+      "outputs": [],
+      "passThroughEnv": [
+        "ANDROID_HOME",
+        "ANDROID_SDK_ROOT",
+        "JAVA_HOME",
+        "GRADLE_OPTS",
+        "GRADLE_USER_HOME"
+      ]
     }
   }
 }

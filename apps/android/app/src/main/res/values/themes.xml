@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose draws everything; the window theme only sets what shows
+         before the first frame and the system bars' starting colors. -->
+    <style name="Theme.Glimpse" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/viewfinder</item>
+    </style>
+
+    <!-- The viewfinder is black, so the splash screen is too, and the camera
+         appears without a flash of color. -->
+    <style name="Theme.Glimpse.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/viewfinder</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.Glimpse</item>
+    </style>
+
+    <!-- Sharing shows a sheet over the app the photo came from. -->
+    <style name="Theme.Glimpse.Share" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+</resources>

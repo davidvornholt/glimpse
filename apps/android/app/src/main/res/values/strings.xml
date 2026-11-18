@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Glimpse</string>
+    <string name="share_target_label">Send to agent</string>
+    <string name="tile_label">Glimpse</string>
+    <string name="shortcut_photo">Photo</string>
+    <string name="shortcut_photo_long">Take a photo</string>
+    <string name="shortcut_scan">Scan</string>
+    <string name="shortcut_scan_long">Scan a document</string>
+</resources>

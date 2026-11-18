@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Copies made for sharing a photo with another app. -->
+    <cache-path
+        name="shared"
+        path="shared/" />
+</paths>

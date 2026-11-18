@@ -28,3 +28,14 @@ config/dev.local.yaml
 
 # Deliberately not ignored: sync-standards.lock. Consumers commit their lock —
 # it is the drift baseline that `standards check` verifies against.
+
+# Android: Gradle's caches and build output, and the files Android Studio
+# writes for one machine. Release keystores live only in secrets/ci.yaml.
+apps/android/.gradle/
+apps/android/.kotlin/
+apps/android/build/
+apps/android/app/build/
+apps/android/local.properties
+apps/android/.idea/
+*.jks
+*.keystore

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="share_target_label">An Agent senden</string>
+    <string name="tile_label">Glimpse</string>
+    <string name="shortcut_photo">Foto</string>
+    <string name="shortcut_photo_long">Foto aufnehmen</string>
+    <string name="shortcut_scan">Scan</string>
+    <string name="shortcut_scan_long">Dokument scannen</string>
+</resources>

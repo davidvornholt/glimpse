@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- These checks compare dependency and SDK versions with whatever was
+         published most recently, so the same commit would pass today and fail
+         tomorrow. Version updates are a deliberate change, not a gate. -->
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+    <issue id="OldTargetApi" severity="ignore" />
+</lint>
