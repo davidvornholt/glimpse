@@ -1,0 +1,195 @@
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { DateTime } from 'effect';
+import {
+  bearer,
+  decodePhoto,
+  pairPhone,
+  registerPhoto,
+  sendPhoto,
+  startTestServer,
+  type TestServer,
+  testOwnerToken,
+  testPhotoId,
+} from './testing.ts';
+
+let server: TestServer;
+let phone: string;
+
+beforeEach(async () => {
+  server = await startTestServer();
+  phone = (await pairPhone(server)).token;
+});
+
+afterEach(async () => {
+  await server.close();
+});
+
+const owner = bearer(testOwnerToken);
+
+const get = (path: string) => server.fetch(path, { headers: owner });
+
+describe('listing photos', () => {
+  it('pages through them newest first', async () => {
+    // One after another, so they arrive in this order.
+    await [1, 2, 3].reduce<Promise<unknown>>(
+      (previous, n) =>
+        previous.then(() => sendPhoto(server, phone, testPhotoId(n))),
+      Promise.resolve(),
+    );
+    const first = (await (await get('/v1/photos?limit=2')).json()) as {
+      photos: Array<{ id: string }>;
+      nextCursor: string;
+    };
+    expect(first.photos.map((photo) => photo.id)).toEqual([
+      testPhotoId(3),
+      testPhotoId(2),
+    ]);
+    const second = await get(
+      `/v1/photos?limit=2&before=${encodeURIComponent(first.nextCursor)}`,
+    );
+    expect(await second.json()).toMatchObject({
+      photos: [{ id: testPhotoId(1) }],
+      nextCursor: null,
+    });
+  });
+
+  it('marks a photo viewed when the owner first fetches it', async () => {
+    const id = testPhotoId(1);
+    await sendPhoto(server, phone, id);
+    const phoneFetch = await server.fetch(`/v1/photos/${id}/preview`, {
+      headers: bearer(phone),
+    });
+    expect(phoneFetch.status).toBe(200);
+    expect(
+      decodePhoto(await (await get(`/v1/photos/${id}`)).json()).viewedAt,
+    ).toBeNull();
+
+    const preview = await get(`/v1/photos/${id}/preview`);
+    expect(preview.headers.get('content-type')).toBe('image/jpeg');
+    const viewed = decodePhoto(await (await get(`/v1/photos/${id}`)).json());
+    expect(viewed.viewedAt).not.toBeNull();
+  });
+});
+
+describe('waiting for a photo', () => {
+  it('answers as soon as a new photo arrives', async () => {
+    const after = new Date().toISOString();
+    const waiting = get(`/v1/photos/wait?after=${after}&timeoutSeconds=10`);
+    await Bun.sleep(50);
+    await sendPhoto(server, phone, testPhotoId(1));
+    const response = await waiting;
+    expect(await response.json()).toMatchObject({
+      photos: [{ id: testPhotoId(1) }],
+    });
+  });
+
+  it('answers at once with a photo that came in the meantime', async () => {
+    const after = new Date(Date.now() - 1000).toISOString();
+    await sendPhoto(server, phone, testPhotoId(1));
+    const response = await get(`/v1/photos/wait?after=${after}`);
+    expect(await response.json()).toMatchObject({
+      photos: [{ id: testPhotoId(1) }],
+    });
+  });
+
+  it('answers with no photos when the time is up', async () => {
+    const after = new Date().toISOString();
+    const response = await get(
+      `/v1/photos/wait?after=${after}&timeoutSeconds=0`,
+    );
+    expect(await response.json()).toEqual({ photos: [] });
+  });
+
+  it('is for the owner, not a phone', async () => {
+    const after = new Date().toISOString();
+    const response = await server.fetch(`/v1/photos/wait?after=${after}`, {
+      headers: bearer(phone),
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it('tells the event stream how many agents wait', async () => {
+    const events = await server.fetch('/v1/events', { headers: bearer(phone) });
+    expect(events.headers.get('content-type')).toContain('text/event-stream');
+    const reader = events.body?.getReader();
+    const first = await reader?.read();
+    const text = new TextDecoder().decode(first?.value);
+    expect(text).toContain('event: waiting');
+    expect(text).toContain('{"count":0}');
+    await reader?.cancel();
+  });
+});
+
+describe('changing photos', () => {
+  it('sets and clears the note', async () => {
+    const id = testPhotoId(1);
+    await sendPhoto(server, phone, id, { note: 'the receipt' });
+    const patch = (note: string | null) =>
+      server.fetch(`/v1/photos/${id}`, {
+        method: 'PATCH',
+        headers: { ...owner, 'content-type': 'application/json' },
+        body: JSON.stringify({ note }),
+      });
+    expect(decodePhoto(await (await patch('page two')).json()).note).toBe(
+      'page two',
+    );
+    expect(decodePhoto(await (await patch(null)).json()).note).toBeNull();
+  });
+
+  it('deletes a photo and its files', async () => {
+    const id = testPhotoId(1);
+    await sendPhoto(server, phone, id);
+    const removed = await server.fetch(`/v1/photos/${id}`, {
+      method: 'DELETE',
+      headers: owner,
+    });
+    expect(removed.status).toBe(204);
+    expect((await get(`/v1/photos/${id}`)).status).toBe(404);
+    expect((await get(`/v1/photos/${id}/preview`)).status).toBe(404);
+  });
+});
+
+describe('retention', () => {
+  const restart = async () => {
+    await server.stop();
+    server = await startTestServer({ dataDirectory: server.dataDirectory });
+  };
+
+  const backdate = async (id: string, field: string) => {
+    const file = join(server.dataDirectory, 'photos', id, 'meta.json');
+    const record = JSON.parse(await readFile(file, 'utf8'));
+    record[field] = DateTime.formatIso(
+      DateTime.subtract(DateTime.nowUnsafe(), { days: 2 }),
+    );
+    await writeFile(file, JSON.stringify(record));
+  };
+
+  it('keeps photos across a restart', async () => {
+    await sendPhoto(server, phone, testPhotoId(1));
+    await restart();
+    expect((await get(`/v1/photos/${testPhotoId(1)}`)).status).toBe(200);
+  });
+
+  it('deletes a photo once it expires', async () => {
+    const id = testPhotoId(1);
+    const photo = await sendPhoto(server, phone, id);
+    const days =
+      (DateTime.toEpochMillis(photo.expiresAt) -
+        DateTime.toEpochMillis(photo.createdAt)) /
+      86_400_000;
+    expect(days).toBe(30);
+    await backdate(id, 'expiresAt');
+    await restart();
+    expect((await get(`/v1/photos/${id}`)).status).toBe(404);
+  });
+
+  it('deletes a photo whose preview never came after a day', async () => {
+    const id = testPhotoId(1);
+    await registerPhoto(server, phone, id);
+    await backdate(id, 'createdAt');
+    await restart();
+    expect((await get(`/v1/photos/${id}`)).status).toBe(404);
+  });
+});

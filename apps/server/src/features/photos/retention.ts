@@ -1,9 +1,10 @@
-import { Effect, Layer, Schedule } from 'effect';
+import { Effect, Layer } from 'effect';
 import { PhotoStore } from './photo-store.ts';
 
 /**
  * Deletes expired photos, and photos whose preview never arrived, at start-up
- * and every hour after.
+ * and every hour after. The first sweep finishes before the server answers,
+ * so it never serves a photo that has expired while it was down.
  */
 export const RetentionLive = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -15,8 +16,10 @@ export const RetentionLive = Layer.effectDiscard(
           : Effect.logInfo(`Deleted ${count} expired photos`),
       ),
     );
-    yield* sweep.pipe(
-      Effect.repeat(Schedule.spaced('1 hour')),
+    yield* sweep;
+    yield* Effect.sleep('1 hour').pipe(
+      Effect.andThen(sweep),
+      Effect.forever,
       Effect.forkScoped,
     );
   }),
