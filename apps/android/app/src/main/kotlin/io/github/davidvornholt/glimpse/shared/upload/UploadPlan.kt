@@ -40,11 +40,21 @@ object UploadPlan {
         photo: Photo,
     ): CaptureRecord =
         when (step) {
-            UploadStep.Register ->
+            UploadStep.Register -> {
                 record.copy(registered = true, serverNote = photo.note, registrations = record.registrations + 1)
-            UploadStep.Note -> record.copy(serverNote = photo.note)
-            UploadStep.Preview -> record.copy(previewSent = true, serverNote = photo.note)
-            UploadStep.Original -> record.copy(originalSent = true, serverNote = photo.note)
+            }
+
+            UploadStep.Note -> {
+                record.copy(serverNote = photo.note)
+            }
+
+            UploadStep.Preview -> {
+                record.copy(previewSent = true, serverNote = photo.note)
+            }
+
+            UploadStep.Original -> {
+                record.copy(originalSent = true, serverNote = photo.note)
+            }
         }
 
     sealed interface Decision {
@@ -81,22 +91,34 @@ object UploadPlan {
         if (error !is ApiException) return Decision.Fail(UploadFailure.Rejected)
         if (error.isTransient) return Decision.RetryLater
         return when (error.tag) {
-            ApiErrorTag.Unauthorized -> Decision.Unpaired
-            ApiErrorTag.Conflict -> Decision.Fail(UploadFailure.Conflict)
-            ApiErrorTag.NotFound ->
+            ApiErrorTag.Unauthorized -> {
+                Decision.Unpaired
+            }
+
+            ApiErrorTag.Conflict -> {
+                Decision.Fail(UploadFailure.Conflict)
+            }
+
+            ApiErrorTag.NotFound -> {
                 if (step != UploadStep.Register && record.registrations < MAX_REGISTRATIONS) {
                     // The server lost the photo, perhaps because its data was reset.
                     Decision.Update { it.copy(registered = false, previewSent = false, originalSent = false) }
                 } else {
                     Decision.Fail(UploadFailure.Rejected)
                 }
-            ApiErrorTag.TooLarge ->
+            }
+
+            ApiErrorTag.TooLarge -> {
                 if (step == UploadStep.Original) {
                     Decision.Update { it.copy(originalSkipped = true) }
                 } else {
                     Decision.Fail(UploadFailure.Rejected)
                 }
-            else -> Decision.Fail(UploadFailure.Rejected)
+            }
+
+            else -> {
+                Decision.Fail(UploadFailure.Rejected)
+            }
         }
     }
 }

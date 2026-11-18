@@ -63,6 +63,7 @@ class ImageProcessor(
                     val file = original(type)
                     file to prepareBytes(bytes, file, type)
                 }
+
                 // HEIF, AVIF and anything else are turned into a JPEG, which drops their metadata.
                 else -> {
                     val file = original(OriginalType.Jpeg)
@@ -80,10 +81,13 @@ class ImageProcessor(
         val stripped =
             when (type) {
                 OriginalType.Jpeg -> MetadataStripper.stripJpeg(bytes, orientation)
+
                 // PNG and WebP keep no orientation once their EXIF is gone, so a
                 // rotated one is turned into an upright JPEG instead.
                 OriginalType.Png -> if (orientation == 1) MetadataStripper.stripPng(bytes) else return reencode(bytes, target)
+
                 OriginalType.Webp -> if (orientation == 1) MetadataStripper.stripWebp(bytes) else return reencode(bytes, target)
+
                 else -> error("$type isn't stripped losslessly")
             }
         writeAtomically(target, stripped)
@@ -164,19 +168,35 @@ class ImageProcessor(
     private fun orientationMatrix(orientation: Int) =
         Matrix().apply {
             when (orientation) {
-                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> postScale(-1f, 1f)
-                ExifInterface.ORIENTATION_ROTATE_180 -> postRotate(180f)
-                ExifInterface.ORIENTATION_FLIP_VERTICAL -> postScale(1f, -1f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> {
+                    postScale(-1f, 1f)
+                }
+
+                ExifInterface.ORIENTATION_ROTATE_180 -> {
+                    postRotate(180f)
+                }
+
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
+                    postScale(1f, -1f)
+                }
+
                 ExifInterface.ORIENTATION_TRANSPOSE -> {
                     postRotate(90f)
                     postScale(-1f, 1f)
                 }
-                ExifInterface.ORIENTATION_ROTATE_90 -> postRotate(90f)
+
+                ExifInterface.ORIENTATION_ROTATE_90 -> {
+                    postRotate(90f)
+                }
+
                 ExifInterface.ORIENTATION_TRANSVERSE -> {
                     postRotate(-90f)
                     postScale(-1f, 1f)
                 }
-                ExifInterface.ORIENTATION_ROTATE_270 -> postRotate(270f)
+
+                ExifInterface.ORIENTATION_ROTATE_270 -> {
+                    postRotate(270f)
+                }
             }
         }
 
@@ -227,16 +247,29 @@ class ImageProcessor(
                 length: Int,
             ) = if (bytes.size >= from + length) String(bytes, from, length, Charsets.US_ASCII) else ""
             return when {
-                bytes.size > 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte() -> OriginalType.Jpeg
-                bytes.size > 8 && bytes[0] == 0x89.toByte() && ascii(1, 3) == "PNG" -> OriginalType.Png
-                ascii(0, 4) == "RIFF" && ascii(8, 4) == "WEBP" -> OriginalType.Webp
-                ascii(4, 4) == "ftyp" ->
+                bytes.size > 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte() -> {
+                    OriginalType.Jpeg
+                }
+
+                bytes.size > 8 && bytes[0] == 0x89.toByte() && ascii(1, 3) == "PNG" -> {
+                    OriginalType.Png
+                }
+
+                ascii(0, 4) == "RIFF" && ascii(8, 4) == "WEBP" -> {
+                    OriginalType.Webp
+                }
+
+                ascii(4, 4) == "ftyp" -> {
                     when (ascii(8, 4)) {
                         "avif", "avis" -> OriginalType.Avif
                         "heic", "heix", "heim", "heis" -> OriginalType.Heic
                         else -> OriginalType.Heif
                     }
-                else -> null
+                }
+
+                else -> {
+                    null
+                }
             }
         }
     }

@@ -35,7 +35,6 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:screenOrientation="unspecified"
             android:theme="@style/Theme.Glimpse.Starting"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -61,7 +60,7 @@
         </activity>
 
         <activity
-            android:name=".features.share.ShareActivity"
+            android:name=".ShareActivity"
             android:excludeFromRecents="true"
             android:exported="true"
             android:label="@string/share_target_label"
@@ -81,7 +80,7 @@
         </activity>
 
         <service
-            android:name=".features.tile.CaptureTileService"
+            android:name=".CaptureTileService"
             android:exported="true"
             android:icon="@drawable/ic_tile"
             android:label="@string/tile_label"

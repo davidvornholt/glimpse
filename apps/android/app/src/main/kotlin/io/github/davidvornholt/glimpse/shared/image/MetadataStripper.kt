@@ -102,13 +102,17 @@ object MetadataStripper {
             require(position + RIFF_PREAMBLE + padded <= riffEnd) { "A WebP chunk runs past the end" }
             val end = position + RIFF_PREAMBLE + padded.toInt()
             when (type) {
-                "EXIF", "XMP " -> Unit
+                "EXIF", "XMP " -> {}
+
                 "VP8X" -> {
                     val chunk = input.copyOfRange(position, end)
                     chunk[RIFF_PREAMBLE] = (chunk[RIFF_PREAMBLE].toInt() and (VP8X_EXIF or VP8X_XMP).inv()).toByte()
                     chunks.write(chunk)
                 }
-                else -> chunks.write(input, position, end - position)
+
+                else -> {
+                    chunks.write(input, position, end - position)
+                }
             }
             position = end
         }
@@ -129,11 +133,15 @@ object MetadataStripper {
     ): Boolean =
         when (marker) {
             MARKER_APP0 -> true
+
             // APP2 also carries MPF, which points at images after the end that are dropped.
             MARKER_APP2 -> input.startsWith(ICC_PROFILE, dataStart, dataEnd)
+
             // Adobe's APP14 says how to read the colors of CMYK and YCCK images.
             MARKER_APP14 -> true
+
             in MARKER_APP1..MARKER_APP15, MARKER_COM -> false
+
             else -> true
         }
 
@@ -213,7 +221,8 @@ object MetadataStripper {
         end: Int,
     ): Boolean = end - start >= prefix.size && prefix.indices.all { this[start + it] == prefix[it] }
 
-    private fun littleEndian(value: Int) = byteArrayOf(value.toByte(), (value shr 8).toByte(), (value shr 16).toByte(), (value shr 24).toByte())
+    private fun littleEndian(value: Int) =
+        byteArrayOf(value.toByte(), (value shr 8).toByte(), (value shr 16).toByte(), (value shr 24).toByte())
 
     private const val MARKER_TEM = 0x01
     private const val MARKER_RST0 = 0xD0

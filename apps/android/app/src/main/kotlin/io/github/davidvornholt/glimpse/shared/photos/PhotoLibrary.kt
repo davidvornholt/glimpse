@@ -2,10 +2,6 @@ package io.github.davidvornholt.glimpse.shared.photos
 
 import android.graphics.Bitmap
 import android.net.Uri
-import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
-import io.github.davidvornholt.glimpse.shared.upload.CaptureStore
-import io.github.davidvornholt.glimpse.shared.upload.DeleteScheduler
-import io.github.davidvornholt.glimpse.shared.upload.UploadScheduler
 import io.github.davidvornholt.glimpse.shared.api.ApiErrorTag
 import io.github.davidvornholt.glimpse.shared.api.ApiException
 import io.github.davidvornholt.glimpse.shared.api.GlimpseApi
@@ -18,6 +14,10 @@ import io.github.davidvornholt.glimpse.shared.settings.SessionState
 import io.github.davidvornholt.glimpse.shared.settings.SessionStore
 import io.github.davidvornholt.glimpse.shared.settings.SettingsStore
 import io.github.davidvornholt.glimpse.shared.ulid.UlidGenerator
+import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
+import io.github.davidvornholt.glimpse.shared.upload.CaptureStore
+import io.github.davidvornholt.glimpse.shared.upload.DeleteScheduler
+import io.github.davidvornholt.glimpse.shared.upload.UploadScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted

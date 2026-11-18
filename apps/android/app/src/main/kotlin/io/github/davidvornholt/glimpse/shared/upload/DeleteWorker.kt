@@ -47,13 +47,22 @@ class DeleteWorker(
         } catch (error: ApiException) {
             when {
                 // The photo was never registered, or is gone already.
-                error.tag == ApiErrorTag.NotFound -> Result.success()
-                error.isTransient -> Result.retry()
+                error.tag == ApiErrorTag.NotFound -> {
+                    Result.success()
+                }
+
+                error.isTransient -> {
+                    Result.retry()
+                }
+
                 error.tag == ApiErrorTag.Unauthorized -> {
                     graph.sessions.markRemoved(session.token)
                     Result.failure()
                 }
-                else -> Result.failure()
+
+                else -> {
+                    Result.failure()
+                }
             }
         } catch (_: IOException) {
             Result.retry()

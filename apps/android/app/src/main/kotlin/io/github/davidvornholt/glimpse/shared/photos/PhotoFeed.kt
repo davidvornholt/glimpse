@@ -85,9 +85,18 @@ class PhotoFeed(
                                 backoff = FIRST_BACKOFF
                                 load(api)
                             }
-                            is ServerEvent.PhotoChanged -> upsert(event.photo)
-                            is ServerEvent.PhotoDeleted -> forget(event.id)
-                            is ServerEvent.Waiting -> waitingCount.value = event.count
+
+                            is ServerEvent.PhotoChanged -> {
+                                upsert(event.photo)
+                            }
+
+                            is ServerEvent.PhotoDeleted -> {
+                                forget(event.id)
+                            }
+
+                            is ServerEvent.Waiting -> {
+                                waitingCount.value = event.count
+                            }
                         }
                     }
                 } catch (cancelled: CancellationException) {

@@ -27,9 +27,18 @@ class UploadWorker(
                 graph.uploads.finished(id)
             }
         return when (outcome) {
-            UploadOutcome.Done, UploadOutcome.Gone -> Result.success()
-            UploadOutcome.RetryLater -> Result.retry()
-            UploadOutcome.Failed -> Result.failure()
+            UploadOutcome.Done, UploadOutcome.Gone -> {
+                Result.success()
+            }
+
+            UploadOutcome.RetryLater -> {
+                Result.retry()
+            }
+
+            UploadOutcome.Failed -> {
+                Result.failure()
+            }
+
             UploadOutcome.Unpaired -> {
                 graph.sessions.markRemoved(session.token)
                 Result.failure()

@@ -3,7 +3,6 @@ package io.github.davidvornholt.glimpse.shared.pairing
 import java.net.URI
 import java.net.URISyntaxException
 import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 
 /**
  * What a pairing QR code holds: `glimpse://pair?server=<base URL>&code=<code>`.
@@ -63,7 +62,7 @@ data class PairingLink(
 
         // URLDecoder reads `+` as a space, as form encoding does. encodeURIComponent
         // never writes a bare `+`, so a literal one has to stay what it is.
-        private fun decode(value: String) = URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8)
+        private fun decode(value: String) = URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
 
         /** The base URL without a trailing slash, or null when it isn't one the app may use. */
         fun normalizeServer(

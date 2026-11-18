@@ -54,8 +54,15 @@ class UploadRunner(
                             records.update(id, decision.change) ?: return UploadOutcome.Gone
                             continue
                         }
-                        UploadPlan.Decision.RetryLater -> return UploadOutcome.RetryLater
-                        UploadPlan.Decision.Unpaired -> return UploadOutcome.Unpaired
+
+                        UploadPlan.Decision.RetryLater -> {
+                            return UploadOutcome.RetryLater
+                        }
+
+                        UploadPlan.Decision.Unpaired -> {
+                            return UploadOutcome.Unpaired
+                        }
+
                         is UploadPlan.Decision.Fail -> {
                             records.update(id) { it.copy(failure = decision.failure) }
                             return UploadOutcome.Failed

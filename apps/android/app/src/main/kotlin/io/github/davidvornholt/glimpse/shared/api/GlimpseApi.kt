@@ -45,7 +45,14 @@ class GlimpseApi(
 
     suspend fun health(): Boolean =
         try {
-            call(Request.Builder().url(url("healthz")).get().build(), authorized = false) { it.isSuccessful }
+            call(
+                Request
+                    .Builder()
+                    .url(url("healthz"))
+                    .get()
+                    .build(),
+                authorized = false,
+            ) { it.isSuccessful }
         } catch (_: IOException) {
             false
         } catch (_: ApiException) {
@@ -117,7 +124,13 @@ class GlimpseApi(
     suspend fun download(
         url: HttpUrl,
         target: File,
-    ) = call(Request.Builder().url(url).get().build()) { response ->
+    ) = call(
+        Request
+            .Builder()
+            .url(url)
+            .get()
+            .build(),
+    ) { response ->
         val partial = File(target.parentFile, "${target.name}.part")
         partial.outputStream().use { output -> response.body.byteStream().use { it.copyTo(output) } }
         if (!partial.renameTo(target)) throw IOException("Couldn't move the download into place")
@@ -125,7 +138,13 @@ class GlimpseApi(
     }
 
     suspend fun delete(id: String) {
-        call(Request.Builder().url(url("v1", "photos", id)).delete().build()) {}
+        call(
+            Request
+                .Builder()
+                .url(url("v1", "photos", id))
+                .delete()
+                .build(),
+        ) {}
     }
 
     /**
@@ -194,8 +213,11 @@ class GlimpseApi(
     ): ServerEvent? =
         when (type) {
             "photo" -> ServerEvent.PhotoChanged(GlimpseJson.decodeFromString(Photo.serializer(), data))
+
             "photo-deleted" -> ServerEvent.PhotoDeleted(GlimpseJson.decodeFromString(DeletedEvent.serializer(), data).id)
+
             "waiting" -> ServerEvent.Waiting(GlimpseJson.decodeFromString(WaitingEvent.serializer(), data).count)
+
             // Newer servers may add events; older apps ignore them.
             else -> null
         }
@@ -206,7 +228,14 @@ class GlimpseApi(
             .apply { segments.forEach(::addPathSegment) }
             .build()
 
-    private suspend inline fun <reified T> get(url: HttpUrl): T = call(Request.Builder().url(url).get().build()) { decode(it) }
+    private suspend inline fun <reified T> get(url: HttpUrl): T =
+        call(
+            Request
+                .Builder()
+                .url(url)
+                .get()
+                .build(),
+        ) { decode(it) }
 
     private suspend inline fun <reified B, reified T> send(
         method: String,
@@ -233,7 +262,13 @@ class GlimpseApi(
         onProgress: (Long, Long) -> Unit,
     ): Photo {
         val body = ProgressFileBody(file, contentType, onProgress)
-        return call(Request.Builder().url(url).put(body).build()) { decode(it) }
+        return call(
+            Request
+                .Builder()
+                .url(url)
+                .put(body)
+                .build(),
+        ) { decode(it) }
     }
 
     private inline fun <reified T> decode(response: Response): T = decode(serializer<T>(), response)

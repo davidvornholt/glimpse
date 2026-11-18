@@ -1,9 +1,6 @@
 package io.github.davidvornholt.glimpse
 
 import android.content.Context
-import io.github.davidvornholt.glimpse.shared.upload.CaptureStore
-import io.github.davidvornholt.glimpse.shared.upload.DeleteScheduler
-import io.github.davidvornholt.glimpse.shared.upload.UploadScheduler
 import io.github.davidvornholt.glimpse.shared.api.GlimpseApi
 import io.github.davidvornholt.glimpse.shared.haptics.Haptics
 import io.github.davidvornholt.glimpse.shared.image.Gallery
@@ -15,6 +12,9 @@ import io.github.davidvornholt.glimpse.shared.settings.SessionState
 import io.github.davidvornholt.glimpse.shared.settings.SessionStore
 import io.github.davidvornholt.glimpse.shared.settings.SettingsStore
 import io.github.davidvornholt.glimpse.shared.ulid.UlidGenerator
+import io.github.davidvornholt.glimpse.shared.upload.CaptureStore
+import io.github.davidvornholt.glimpse.shared.upload.DeleteScheduler
+import io.github.davidvornholt.glimpse.shared.upload.UploadScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +28,9 @@ class AppGraph(
     context: Context,
 ) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** For work a screen starts that must finish even if the screen goes, then tells the user. */
+    val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val http: OkHttpClient =
         OkHttpClient

@@ -1,4 +1,4 @@
-package io.github.davidvornholt.glimpse.features.tile
+package io.github.davidvornholt.glimpse
 
 import android.annotation.SuppressLint
 import android.app.PendingIntent
@@ -6,7 +6,6 @@ import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
-import io.github.davidvornholt.glimpse.MainActivity
 
 /** A Quick Settings tile that opens straight into the viewfinder. */
 class CaptureTileService : TileService() {

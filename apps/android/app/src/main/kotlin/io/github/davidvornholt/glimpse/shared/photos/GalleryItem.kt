@@ -1,12 +1,12 @@
 package io.github.davidvornholt.glimpse.shared.photos
 
-import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
-import io.github.davidvornholt.glimpse.shared.upload.UploadFailure
-import io.github.davidvornholt.glimpse.shared.upload.UploadProgress
 import io.github.davidvornholt.glimpse.shared.api.OriginalType
 import io.github.davidvornholt.glimpse.shared.api.Photo
 import io.github.davidvornholt.glimpse.shared.api.PhotoSource
 import io.github.davidvornholt.glimpse.shared.ulid.UlidGenerator
+import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
+import io.github.davidvornholt.glimpse.shared.upload.UploadFailure
+import io.github.davidvornholt.glimpse.shared.upload.UploadProgress
 import java.time.Instant
 
 /** Where a photo's upload stands, as the filmstrip and the inbox show it. */
@@ -69,7 +69,7 @@ data class GalleryItem(
                     else -> UploadState.Queued
                 }
             return when {
-                record != null ->
+                record != null -> {
                     GalleryItem(
                         id = id,
                         sentAt = remote?.createdAt ?: Instant.ofEpochMilli(UlidGenerator.timeOf(id)),
@@ -87,7 +87,9 @@ data class GalleryItem(
                         thumbnail = localPreview ?: remotePreview,
                         isLocal = true,
                     )
-                remote != null ->
+                }
+
+                remote != null -> {
                     GalleryItem(
                         id = id,
                         sentAt = remote.createdAt,
@@ -105,7 +107,11 @@ data class GalleryItem(
                         thumbnail = remotePreview,
                         isLocal = false,
                     )
-                else -> null
+                }
+
+                else -> {
+                    null
+                }
             }
         }
     }

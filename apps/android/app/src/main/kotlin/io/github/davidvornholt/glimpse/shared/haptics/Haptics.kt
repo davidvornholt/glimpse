@@ -29,6 +29,10 @@ class Haptics(
                 Composition.PRIMITIVE_THUD,
             )
 
+    private val newFeedback = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+    private val segmentTick = if (newFeedback) HapticFeedbackConstants.SEGMENT_TICK else HapticFeedbackConstants.CLOCK_TICK
+    private val frequentTick = if (newFeedback) HapticFeedbackConstants.SEGMENT_FREQUENT_TICK else HapticFeedbackConstants.CLOCK_TICK
+
     /** The shutter: a firm click with a soft thud behind it. */
     fun shutter(view: View) =
         play(view, HapticFeedbackConstants.CONFIRM) {
@@ -38,13 +42,13 @@ class Haptics(
 
     /** A selection changing, such as the mode switch. */
     fun tick(view: View) =
-        play(view, HapticFeedbackConstants.SEGMENT_TICK) {
+        play(view, segmentTick) {
             addPrimitive(Composition.PRIMITIVE_TICK, 0.7f)
         }
 
     /** Barely there: an agent just looked at a photo. */
     fun light(view: View) =
-        play(view, HapticFeedbackConstants.SEGMENT_FREQUENT_TICK) {
+        play(view, frequentTick) {
             addPrimitive(Composition.PRIMITIVE_LOW_TICK, 0.6f)
             addPrimitive(Composition.PRIMITIVE_TICK, 0.4f, 60)
         }
