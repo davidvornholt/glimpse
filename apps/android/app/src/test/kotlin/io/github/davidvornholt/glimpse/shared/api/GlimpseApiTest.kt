@@ -1,5 +1,6 @@
 package io.github.davidvornholt.glimpse.shared.api
 
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -288,6 +289,30 @@ class GlimpseApiTest {
         }
 
     @Test
+    fun `keeps every event of a burst while the app is busy`() =
+        runTest {
+            val burst = (1..200).joinToString("") { "event: waiting\ndata: {\"count\":$it}\n\n" }
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .addHeader("Content-Type", "text/event-stream")
+                    .body(burst)
+                    .build(),
+            )
+
+            val events =
+                api
+                    .events()
+                    .onEach { event ->
+                        // The feed fetches its list after connecting, while the stream keeps arriving.
+                        if (event == ServerEvent.Connected) Thread.sleep(BUSY_MILLIS)
+                    }.take(201)
+                    .toList()
+
+            assertEquals(listOf<ServerEvent>(ServerEvent.Connected) + (1..200).map { ServerEvent.Waiting(it) }, events)
+        }
+
+    @Test
     fun `ends the event stream with the server's refusal`() =
         runTest {
             server.enqueue(error(401, "Unauthorized"))
@@ -297,3 +322,5 @@ class GlimpseApiTest {
             assertEquals(ApiErrorTag.Unauthorized, error.tag)
         }
 }
+
+private const val BUSY_MILLIS = 500L

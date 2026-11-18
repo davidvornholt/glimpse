@@ -2,6 +2,7 @@ package io.github.davidvornholt.glimpse.shared.api
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -182,7 +183,9 @@ class GlimpseApi(
                                 close(IOException("The server sent an event the app can't read", error))
                                 return
                             }
-                        if (event != null) trySend(event)
+                        // OkHttp reads the stream on its own thread, so waiting here holds the stream
+                        // back instead of dropping events while the app is busy.
+                        if (event != null) trySendBlocking(event)
                     }
 
                     override fun onClosed(eventSource: EventSource) {
