@@ -4,6 +4,9 @@ node_modules/
 dist/
 .next/
 *.log
+
+# What `bun run dev` in apps/server keeps: photos and paired phones.
+apps/server/.data/
 mise.local.toml
 mise.*.local.toml
 .mise.local.toml

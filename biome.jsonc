@@ -10,5 +10,23 @@
     // files, so only force-ignore (`!!`) guarantees they are never discovered
     // as nested roots.
     "includes": ["**", "!!.claude/worktrees"]
-  }
+  },
+  "overrides": [
+    {
+      // The server and the CLI are compiled into Bun binaries and never run
+      // in a browser or on an edge runtime, which is what noNodejsModules
+      // protects; the `Bun` global comes from that runtime.
+      "includes": ["apps/server/**", "apps/cli/**"],
+      "javascript": {
+        "globals": ["Bun"]
+      },
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noNodejsModules": "off"
+          }
+        }
+      }
+    }
+  ]
 }

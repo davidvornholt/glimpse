@@ -1,0 +1,24 @@
+{
+  "name": "@glimpse/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build --compile src/app/cli.ts --outfile dist/glimpse",
+    "check-types": "tsc --noEmit",
+    "test": "bun test",
+    "install:user": "bun run build && bun scripts/install.ts"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.1.4",
+    "@glimpse/api": "workspace:*",
+    "effect": "4.1.4",
+    "uqr": "0.1.3"
+  },
+  "devDependencies": {
+    "@davidvornholt/typescript-config": "workspace:*",
+    "@glimpse/server": "workspace:*",
+    "@types/bun": "^1.4.3",
+    "typescript": "7.0.2"
+  }
+}
