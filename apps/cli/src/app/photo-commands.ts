@@ -153,7 +153,7 @@ export const download = Command.make(
           const missing = photos.filter((photo) => !photo.hasOriginal);
           if (missing.length > 0) {
             return yield* new FileNotSaved({
-              message: `The phone has not sent the original of ${missing.map((photo) => photo.id).join(', ')} yet. It sends originals after the preview; try again in a minute, or use \`glimpse preview\`.`,
+              message: `The server has the preview of ${missing.map((photo) => photo.id).join(', ')} but not the original. The phone sends originals after the preview, so it may still be on its way, but it may also never come, for example when it is too large for the server. Use \`glimpse preview\` meanwhile.`,
             });
           }
           const files = photos.map((photo) =>

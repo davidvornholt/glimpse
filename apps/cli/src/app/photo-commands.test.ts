@@ -247,11 +247,13 @@ describe('glimpse download', () => {
     expect(await readdir(directory)).toEqual([]);
   });
 
-  it('says when the phone has not sent the original yet', async () => {
+  it('says the original may still come or may never come', async () => {
     await sendPhoto(fixture.server, phone, first);
     const failure = await failureOf('download', first, '--to', directory);
-    expect(failure._tag).toBe('FileNotSaved');
-    expect(failure.message).toContain('has not sent the original');
+    expect(failure).toMatchObject({
+      _tag: 'FileNotSaved',
+      message: `The server has the preview of ${first} but not the original. The phone sends originals after the preview, so it may still be on its way, but it may also never come, for example when it is too large for the server. Use \`glimpse preview\` meanwhile.`,
+    });
   });
 
   it('needs an existing directory', async () => {
