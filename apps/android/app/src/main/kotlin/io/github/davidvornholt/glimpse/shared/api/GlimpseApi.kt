@@ -132,9 +132,14 @@ class GlimpseApi(
             .get()
             .build(),
     ) { response ->
-        val partial = File(target.parentFile, "${target.name}.part")
-        partial.outputStream().use { output -> response.body.byteStream().use { it.copyTo(output) } }
-        if (!partial.renameTo(target)) throw IOException("Couldn't move the download into place")
+        // A file of its own, so two downloads of the same photo, such as a share and a save, can't write into each other.
+        val partial = File.createTempFile(target.name, ".part", target.parentFile)
+        try {
+            partial.outputStream().use { output -> response.body.byteStream().use { it.copyTo(output) } }
+            if (!partial.renameTo(target)) throw IOException("Couldn't move the download into place")
+        } finally {
+            partial.delete()
+        }
         response.header("Content-Type")
     }
 

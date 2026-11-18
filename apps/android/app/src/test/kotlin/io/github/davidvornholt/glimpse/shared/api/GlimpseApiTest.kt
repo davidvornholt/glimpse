@@ -1,9 +1,13 @@
 package io.github.davidvornholt.glimpse.shared.api
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.OkHttpClient
@@ -11,6 +15,7 @@ import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import java.io.IOException
 import java.time.Instant
+import java.util.concurrent.TimeUnit
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -194,8 +199,34 @@ class GlimpseApiTest {
 
             assertEquals("image/jpeg", type)
             assertEquals("jpeg bytes", target.readText())
-            assertFalse(folder.root.resolve("preview.jpg.part").exists())
+            assertEquals(listOf("preview.jpg"), folder.root.list()?.toList())
             assertEquals("/v1/photos/$TEST_PHOTO_ID/preview", server.takeRequest().url.encodedPath)
+        }
+
+    @Test
+    fun `downloads the same photo twice at once`() =
+        runTest {
+            val body = "jpeg bytes ".repeat(DOWNLOAD_REPEATS)
+            repeat(2) {
+                server.enqueue(
+                    MockResponse
+                        .Builder()
+                        .body(body)
+                        .throttleBody(DOWNLOAD_CHUNK, DOWNLOAD_PAUSE_MILLIS, TimeUnit.MILLISECONDS)
+                        .build(),
+                )
+            }
+            val target = folder.root.resolve("glimpse-$TEST_PHOTO_ID.jpg")
+
+            withContext(Dispatchers.IO) {
+                listOf(
+                    async { api.download(api.originalUrl(TEST_PHOTO_ID), target) },
+                    async { api.download(api.originalUrl(TEST_PHOTO_ID), target) },
+                ).awaitAll()
+            }
+
+            assertEquals(body, target.readText())
+            assertEquals(listOf(target.name), folder.root.list()?.toList())
         }
 
     @Test
@@ -324,3 +355,9 @@ class GlimpseApiTest {
 }
 
 private const val BUSY_MILLIS = 500L
+
+private const val DOWNLOAD_REPEATS = 2000
+
+private const val DOWNLOAD_CHUNK = 4096L
+
+private const val DOWNLOAD_PAUSE_MILLIS = 20L
