@@ -96,6 +96,12 @@ if ! grep -Fqx 'event: waiting' "$events"; then
   echo "The event stream sent no first event within 5 s." >&2
   exit 1
 fi
+# A stream the server has already ended would hold nothing open at the stop.
+sleep 1
+if ! kill -0 "$events_pid" 2>/dev/null; then
+  echo "The event stream ended after its first event instead of staying open." >&2
+  exit 1
+fi
 
 started=$(date +%s)
 "$docker" stop --time 10 "$name" >/dev/null
