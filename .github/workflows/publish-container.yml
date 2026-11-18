@@ -2,9 +2,9 @@ name: Publish container
 
 # Pull requests build the server image and smoke-test it. A push to main
 # builds the image while Standards checks the same commit, pushes it under the
-# commit's SHA, and smoke-tests the pushed digest. The gate job confirms that
-# Standards passed on that exact commit, because a squash commit on main is new
-# and the pull request's checks do not cover it.
+# commit's SHA, smoke-tests the pushed digest, and releases it to prod-1. The
+# gate job confirms that Standards passed on that exact commit, because a
+# squash commit on main is new and the pull request's checks do not cover it.
 on:
   pull_request:
   push:
@@ -104,7 +104,7 @@ jobs:
 
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
 
-  # Runs in parallel with the gate. The pushed image is inert until a release
+  # Runs in parallel with the gate. The pushed image is inert until the release
   # job, which needs the gate and this job, hands its digest to the host.
   build:
     if: github.event_name == 'push'
@@ -157,3 +157,36 @@ jobs:
           set -euo pipefail
           docker pull --quiet "$IMAGE"
           bash apps/server/scripts/container-smoke.sh "$IMAGE"
+
+  release:
+    needs: [gate, build]
+    if: >-
+      github.repository == 'davidvornholt/glimpse' &&
+      github.ref == 'refs/heads/main' &&
+      needs.gate.outputs.gated-sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    concurrency:
+      group: app-release-glimpse
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: Checkout the released commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Release the image to production
+        id: release
+        uses: ./.github/actions/app-release
+        with:
+          unit: glimpse
+          host: prod-1.vornholt.online
+          known-host: prod-1.vornholt.online ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFkom7Y24gnBa9X+gUDBZvlCnXiuKTo87ROOtlMpgNH5
+          images: glimpse@${{ needs.build.outputs.digest }}
+          age-key: ${{ secrets.SOPS_AGE_KEY }}
