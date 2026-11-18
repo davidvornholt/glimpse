@@ -1,0 +1,22 @@
+{
+  "name": "@glimpse/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build --compile src/app/main.ts --outfile dist/glimpse-server",
+    "check-types": "tsc --noEmit",
+    "dev": "bun --watch src/app/dev.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.1.4",
+    "@glimpse/api": "workspace:*",
+    "effect": "4.1.4"
+  },
+  "devDependencies": {
+    "@davidvornholt/typescript-config": "workspace:*",
+    "@types/bun": "^1.4.3",
+    "typescript": "7.0.2"
+  }
+}
