@@ -5,8 +5,16 @@ import { BunHttpServer } from '@effect/platform-bun';
 import { ClaimResultSchema, PairingSchema } from '@glimpse/api/device';
 import { parsePairingLink } from '@glimpse/api/pairing-link';
 import { defaultRetentionDays, PhotoSchema } from '@glimpse/api/photo';
-import { Layer, Option, Schema } from 'effect';
+import {
+  type Context,
+  type Duration,
+  Effect,
+  Layer,
+  Option,
+  Schema,
+} from 'effect';
 import { HttpRouter } from 'effect/http';
+import { TestClock } from 'effect/testing';
 import { ServerConfig } from '../shared/config.ts';
 import { tokenDigest } from '../shared/tokens.ts';
 import { appLayer } from './server.ts';
@@ -26,12 +34,22 @@ export type TestServer = {
   readonly stop: () => Promise<void>;
   /** Stops the server and deletes its data. */
   readonly close: () => Promise<void>;
+  /**
+   * Moves the server's clock on and wakes what was due by then. Only for a
+   * server started with `testClock`.
+   */
+  readonly adjustClock: (duration: Duration.Input) => Promise<void>;
 };
 
 export type TestServerOptions = {
   /** Starts on the data an earlier server left, as after a restart. */
   readonly dataDirectory?: string;
   readonly retentionDays?: number;
+  /**
+   * Runs the server on a clock that starts at the current time and moves only
+   * with `adjustClock`, so a test can let hours pass at once.
+   */
+  readonly testClock?: boolean;
 };
 
 /** The whole server, without a socket, on a fresh data directory. */
@@ -47,8 +65,18 @@ export const startTestServer = async (
     ownerTokenDigests: [tokenDigest(testOwnerToken)],
     retentionDays: options.retentionDays ?? defaultRetentionDays,
   });
+  let clock: Context.Context<TestClock.TestClock> | undefined;
+  const testClock = TestClock.layer().pipe(
+    Layer.tap((context) => {
+      clock = context;
+      return TestClock.setTime(Date.now()).pipe(Effect.provideContext(context));
+    }),
+  );
+  const app = appLayer(config).pipe(
+    Layer.provide(BunHttpServer.layerHttpServices),
+  );
   const { handler, dispose } = HttpRouter.toWebHandler(
-    appLayer(config).pipe(Layer.provide(BunHttpServer.layerHttpServices)),
+    options.testClock === true ? app.pipe(Layer.provideMerge(testClock)) : app,
     { disableLogger: true },
   );
   const fetch = (input: string | URL | Request, init?: RequestInit) =>
@@ -64,6 +92,16 @@ export const startTestServer = async (
     close: async () => {
       await dispose();
       await rm(dataDirectory, { recursive: true, force: true });
+    },
+    adjustClock: (duration) => {
+      if (clock === undefined) {
+        throw new Error(
+          'Start the server with testClock, and call it once, to move its clock.',
+        );
+      }
+      return Effect.runPromise(
+        TestClock.adjust(duration).pipe(Effect.provideContext(clock)),
+      );
     },
   };
 };

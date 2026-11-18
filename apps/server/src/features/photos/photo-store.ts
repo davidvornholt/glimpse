@@ -189,11 +189,22 @@ export class PhotoStore extends Context.Service<
           return found.value;
         });
 
+      // A photo that can't be deleted holds up no other, and stays due, so the
+      // next sweep tries it again.
       const expire = Effect.gen(function* () {
         const now = DateTime.toEpochMillis(yield* DateTime.now);
         const due = (yield* all).filter((photo) => isDue(photo, now));
-        yield* Effect.forEach(due, forget, { discard: true });
-        return due.length;
+        const deleted = yield* Effect.forEach(due, (photo) =>
+          forget(photo).pipe(
+            Effect.as(true),
+            Effect.catch((error) =>
+              Effect.logWarning(
+                `Could not delete photo ${photo.id}, so the next sweep tries again: ${error.message}`,
+              ).pipe(Effect.as(false)),
+            ),
+          ),
+        );
+        return deleted.filter(Boolean).length;
       }).pipe(lock.withPermit);
 
       return {
@@ -222,7 +233,11 @@ export class PhotoStore extends Context.Service<
           ),
         get: (id) => find(id).pipe(Effect.map(publicPhoto)),
         image,
-        remove: (id) => find(id).pipe(Effect.flatMap(forget), lock.withPermit),
+        remove: (id) =>
+          find(id).pipe(
+            Effect.flatMap((photo) => forget(photo).pipe(Effect.orDie)),
+            lock.withPermit,
+          ),
         expire,
       };
     }),

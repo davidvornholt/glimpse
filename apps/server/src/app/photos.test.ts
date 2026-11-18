@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DateTime } from 'effect';
 import {
@@ -191,5 +191,53 @@ describe('retention', () => {
     await backdate(id, 'createdAt');
     await restart();
     expect((await get(`/v1/photos/${id}`)).status).toBe(404);
+  });
+
+  const onDisk = (id: string) =>
+    stat(join(server.dataDirectory, 'photos', id)).then(
+      () => true,
+      () => false,
+    );
+
+  /** Waits up to two seconds for the photo's folder to go. */
+  const goneFromDisk = async (id: string, deadline = Date.now() + 2000) => {
+    if (!(await onDisk(id)) || Date.now() > deadline) {
+      return !(await onDisk(id));
+    }
+    await Bun.sleep(10);
+    return goneFromDisk(id, deadline);
+  };
+
+  it('deletes the other photos when one fails, and that one an hour later', async () => {
+    await server.close();
+    server = await startTestServer({ testClock: true, retentionDays: 1 });
+    phone = (await pairPhone(server)).token;
+    const stuck = testPhotoId(1);
+    const other = testPhotoId(2);
+    await sendPhoto(server, phone, stuck);
+    await sendPhoto(server, phone, other);
+    // A folder in the photo's folder that nothing may be deleted from makes
+    // deleting the photo fail, until it may again.
+    const locked = join(server.dataDirectory, 'photos', stuck, 'locked');
+    await mkdir(locked);
+    await writeFile(join(locked, 'file'), '');
+    await chmod(locked, 0o500);
+    const unlock = () => chmod(locked, 0o700).catch(() => undefined);
+    try {
+      await expect(rm(join(locked, 'file'))).rejects.toThrow('EACCES');
+
+      await server.adjustClock('1 day');
+      expect(await goneFromDisk(other)).toBe(true);
+      expect(await onDisk(stuck)).toBe(true);
+      expect((await get(`/v1/photos/${stuck}`)).status).toBe(200);
+
+      await unlock();
+      await server.adjustClock('1 hour');
+      expect(await goneFromDisk(stuck)).toBe(true);
+      expect((await get(`/v1/photos/${stuck}`)).status).toBe(404);
+    } finally {
+      // Lets the test's data be deleted, however the test went.
+      await unlock();
+    }
   });
 });

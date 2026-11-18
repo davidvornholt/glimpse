@@ -57,12 +57,16 @@ export const makePhotoState = Effect.gen(function* () {
       return photo;
     });
 
-  /** Deletes a photo's files and record. Call it holding the lock. */
+  /**
+   * Deletes a photo's files and record. Call it holding the lock. The record
+   * stays when its files can't all be deleted, so deleting again tries again.
+   */
   const forget = (photo: StoredPhoto) =>
     Effect.gen(function* () {
-      yield* disk.fs
-        .remove(files(photo).directory, { recursive: true, force: true })
-        .pipe(Effect.orDie);
+      yield* disk.fs.remove(files(photo).directory, {
+        recursive: true,
+        force: true,
+      });
       yield* Ref.update(photos, (current) => {
         const next = new Map(current);
         next.delete(photo.id);
