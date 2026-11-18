@@ -13,6 +13,8 @@ import androidx.work.workDataOf
 import io.github.davidvornholt.glimpse.GlimpseApp
 import io.github.davidvornholt.glimpse.shared.api.ApiErrorTag
 import io.github.davidvornholt.glimpse.shared.api.ApiException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.io.IOException
 import java.time.Duration
 
@@ -22,14 +24,34 @@ class DeleteScheduler(
 ) {
     private val workManager = WorkManager.getInstance(context)
 
+    /**
+     * The photos whose delete hasn't reached the server yet. They stay out of
+     * every list, even after a restart, so a list from the server can't bring
+     * them back in the meantime.
+     */
+    val pending: Flow<Set<String>> =
+        workManager.getWorkInfosByTagFlow(TAG).map { works ->
+            works
+                .filterNot { it.state.isFinished }
+                .mapNotNull { work -> work.tags.firstOrNull { it.startsWith(PHOTO_TAG) }?.removePrefix(PHOTO_TAG) }
+                .toSet()
+        }
+
     fun enqueue(id: String) {
         val request =
             OneTimeWorkRequestBuilder<DeleteWorker>()
                 .setInputData(workDataOf(DeleteWorker.KEY_ID to id))
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, Duration.ofSeconds(10))
+                .addTag(TAG)
+                .addTag(PHOTO_TAG + id)
                 .build()
         workManager.enqueueUniqueWork("delete-$id", ExistingWorkPolicy.KEEP, request)
+    }
+
+    private companion object {
+        const val TAG = "delete"
+        const val PHOTO_TAG = "delete-photo:"
     }
 }
 

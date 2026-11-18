@@ -59,6 +59,9 @@ class PhotoLibrary(
     private val pending = MutableStateFlow<Map<String, PendingCapture>>(emptyMap())
     private val hidden = MutableStateFlow<Set<String>>(emptySet())
 
+    /** The photos waiting for an undo, and those whose delete hasn't reached the server yet. */
+    private val hiddenOrDeleting = combine(hidden, deletes.pending, Set<String>::plus)
+
     init {
         scope.launch {
             captures.load()
@@ -71,7 +74,7 @@ class PhotoLibrary(
 
     /** Every photo, newest first. */
     val items: StateFlow<List<GalleryItem>> =
-        combine(captures.records, feed.photos, uploads.progress, pending, hidden) { records, remote, progress, pending, hidden ->
+        combine(captures.records, feed.photos, uploads.progress, pending, hiddenOrDeleting) { records, remote, progress, pending, hidden ->
             val api = (sessions.state.value as? SessionState.Paired)?.session?.let(apiFor)
             val ids = records.keys + remote.keys + pending.keys - hidden
             ids
@@ -233,12 +236,13 @@ class PhotoLibrary(
         hidden.update { it - id }
     }
 
+    /** Deletes a photo. It stays hidden until the server has it deleted. */
     suspend fun delete(id: String) {
+        // Queued first, so the server hears of it even when the process dies right after.
+        deletes.enqueue(id)
         uploads.cancel(id)
         captures.remove(id)
         feed.forget(id)
-        deletes.enqueue(id)
-        hidden.update { it - id }
     }
 
     suspend fun retry(id: String) {
