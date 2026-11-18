@@ -28,17 +28,31 @@ object LocalNetwork {
         Build.VERSION.SDK_INT < FIRST_SDK ||
             ContextCompat.checkSelfPermission(context, PERMISSION) == PackageManager.PERMISSION_GRANTED
 
-    /** Whether [host] resolves to an address on the local network. A host that doesn't resolve isn't. */
-    suspend fun isLocal(host: String): Boolean =
-        withContext(Dispatchers.IO) {
+    /**
+     * Whether [host] is on the local network: a `.local` name, or a name that
+     * resolves to a local address. A `.local` name isn't resolved, because
+     * multicast DNS needs the permission already. A host that doesn't resolve isn't local.
+     */
+    suspend fun isLocal(
+        host: String,
+        resolve: (String) -> Array<InetAddress> = InetAddress::getAllByName,
+    ): Boolean {
+        if (isMulticastDnsName(host)) return true
+        return withContext(Dispatchers.IO) {
             try {
-                InetAddress.getAllByName(host).any(::isLocalAddress)
+                resolve(host).any(::isLocalAddress)
             } catch (_: UnknownHostException) {
                 false
             } catch (_: SecurityException) {
                 false
             }
         }
+    }
+
+    private fun isMulticastDnsName(host: String): Boolean {
+        val name = host.trimEnd('.').lowercase()
+        return name == "local" || name.endsWith(".local")
+    }
 
     /**
      * Private and link-local addresses, unique local IPv6 addresses, and the
