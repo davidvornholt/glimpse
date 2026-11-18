@@ -1,5 +1,6 @@
 package io.github.davidvornholt.glimpse
 
+import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -61,7 +62,9 @@ class ShareActivity : ComponentActivity() {
                 }
             }
         val clipped = intent.clipData?.let { clip -> (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri } }.orEmpty()
-        return (uris.ifEmpty { clipped }).distinct().take(MAX_IMAGES)
+        // Only another app's content: a web address would go out over the network, and a file one
+        // could point into this app's own storage.
+        return (uris.ifEmpty { clipped }).filter { it.scheme == ContentResolver.SCHEME_CONTENT }.distinct().take(MAX_IMAGES)
     }
 
     private companion object {

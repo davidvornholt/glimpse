@@ -2,6 +2,7 @@ package io.github.davidvornholt.glimpse
 
 import android.content.Context
 import io.github.davidvornholt.glimpse.shared.api.GlimpseApi
+import io.github.davidvornholt.glimpse.shared.api.isOnServer
 import io.github.davidvornholt.glimpse.shared.haptics.Haptics
 import io.github.davidvornholt.glimpse.shared.image.Gallery
 import io.github.davidvornholt.glimpse.shared.image.ImageProcessor
@@ -74,7 +75,7 @@ class AppGraph(
                 Interceptor { chain ->
                     val request = chain.request()
                     val session = (sessions.state.value as? SessionState.Paired)?.session
-                    if (session != null && request.url.toString().startsWith(session.server) && request.header("Authorization") == null) {
+                    if (session != null && isOnServer(request.url, session.server) && request.header("Authorization") == null) {
                         chain.proceed(request.newBuilder().header("Authorization", "Bearer ${session.token}").build())
                     } else {
                         chain.proceed(request)
