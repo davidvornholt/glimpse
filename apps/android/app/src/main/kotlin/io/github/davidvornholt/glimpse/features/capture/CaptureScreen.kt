@@ -307,7 +307,9 @@ fun CaptureScreen(
     }
 
     if (noteSheetOpen) {
-        val last = todays.firstOrNull()
+        // The sheet stays on the photo it opened on, even when another one arrives meanwhile.
+        val lastId = remember { todays.firstOrNull()?.id }
+        val last = todays.firstOrNull { it.id == lastId }
         CaptureNoteSheet(
             pendingNote = settings.pendingNote,
             last = last,
