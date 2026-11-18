@@ -36,10 +36,17 @@ class CaptureStore(
 
     private fun metaFile(id: String) = File(directory(id), "meta.json")
 
-    /** Makes the directory a new photo's files go in. */
+    /**
+     * Makes the directory a new photo's files go in. The store loads first,
+     * because loading deletes directories without a record, as this one is
+     * until [add] writes it.
+     */
     suspend fun prepare(id: String): File =
-        withContext(Dispatchers.IO) {
-            directory(id).apply { if (!isDirectory && !mkdirs()) throw IOException("Couldn't make $this") }
+        mutex.withLock {
+            loadLocked()
+            withContext(Dispatchers.IO) {
+                directory(id).apply { if (!isDirectory && !mkdirs()) throw IOException("Couldn't make $this") }
+            }
         }
 
     suspend fun load() {
@@ -55,11 +62,16 @@ class CaptureStore(
                     .orEmpty()
                     .mapNotNull { directory ->
                         val meta = File(directory, "meta.json")
-                        val record = if (meta.isFile) read(meta) else null
-                        // A directory without a readable record is a capture the
-                        // process died in the middle of.
-                        if (record == null) directory.deleteRecursively()
-                        record
+                        if (meta.isFile) {
+                            // A record this version can't read stays on disk, so the
+                            // photo it describes isn't lost with it.
+                            read(meta)
+                        } else {
+                            // A directory without a record is a capture the process
+                            // died in the middle of.
+                            directory.deleteRecursively()
+                            null
+                        }
                     }.associateBy { it.id }
             }
         loaded.value = true
