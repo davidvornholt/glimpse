@@ -58,10 +58,33 @@ export const checkFree = (files: ReadonlyArray<string>) =>
   );
 
 /**
+ * Copies a finished draft to `file` on file systems without hard links, such
+ * as exFAT. The file is created only if nothing is at its name, and removed
+ * again if the copy breaks off, so a part of the photo never passes for it.
+ */
+const copyToNewFile = (draft: string, file: string) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const target = yield* fs
+        .open(file, { flag: 'wx', mode: ownerOnlyFile })
+        .pipe(
+          Effect.catchReason('PlatformError', 'AlreadyExists', () =>
+            Effect.fail(alreadyThere(file)),
+          ),
+        );
+      yield* fs.stream(draft).pipe(
+        Stream.runForEach((chunk) => target.writeAll(chunk)),
+        Effect.onError(() => fs.remove(file).pipe(Effect.ignore)),
+      );
+    }),
+  );
+
+/**
  * Streams the original of a photo into a new file. It is written under a
  * draft name first, so a broken download never passes for the photo, and
- * then linked to its name, which fails instead of replacing a file that
- * appeared there meanwhile.
+ * then linked or copied to its name in a way that fails instead of replacing
+ * a file that appeared there meanwhile.
  */
 export const saveOriginal = Effect.fn('saveOriginal')(function* (
   id: string,
@@ -92,16 +115,7 @@ export const saveOriginal = Effect.fn('saveOriginal')(function* (
       Effect.catchReason('PlatformError', 'AlreadyExists', () =>
         Effect.fail(alreadyThere(file)),
       ),
-      // Some file systems, such as exFAT, have no hard links.
-      Effect.catchTag('PlatformError', () =>
-        Effect.gen(function* () {
-          const entry = yield* entryAt(file);
-          if (Option.isSome(entry)) {
-            return yield* alreadyThere(file);
-          }
-          yield* fs.rename(draft, file);
-        }),
-      ),
+      Effect.catchTag('PlatformError', () => copyToNewFile(draft, file)),
     );
   }).pipe(
     Effect.mapError((error) =>

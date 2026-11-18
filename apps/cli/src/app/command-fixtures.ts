@@ -10,7 +10,14 @@ import {
   testOrigin,
   testOwnerToken,
 } from '@glimpse/server/testing';
-import { ConfigProvider, DateTime, Effect, Stdio, Stream } from 'effect';
+import {
+  ConfigProvider,
+  DateTime,
+  Effect,
+  FileSystem,
+  Stdio,
+  Stream,
+} from 'effect';
 import { Command } from 'effect/cli';
 import { FetchHttpClient } from 'effect/http';
 import { glimpse } from './cli.ts';
@@ -31,6 +38,8 @@ export const fixture = {
   home: '',
   stdin: '',
   sent: [] as Array<Sent>,
+  /** Changes the file system the commands see, such as to take away hard links. */
+  fileSystem: (fs: FileSystem.FileSystem) => fs,
 };
 
 const unknownServer = 599;
@@ -80,6 +89,9 @@ export const run = (...args: ReadonlyArray<string>) =>
           ),
           stdinIsTerminal: Effect.succeed(false),
         }),
+      ),
+      Effect.updateService(FileSystem.FileSystem, (fs) =>
+        fixture.fileSystem(fs),
       ),
       Effect.provide(BunServices.layer),
       Effect.provide(DateTime.layerCurrentZoneNamed('Europe/Berlin')),
@@ -135,6 +147,7 @@ const ownerOnlyDirectory = 0o700;
 export const setUp = async (spyOn: typeof SpyOn) => {
   fixture.sent = [];
   fixture.stdin = '';
+  fixture.fileSystem = (fs) => fs;
   fixture.server = await startTestServer();
   fixture.home = await mkdtemp(join(tmpdir(), 'glimpse-cli-'));
   await writeCredentials({ server: testOrigin, token: testOwnerToken });

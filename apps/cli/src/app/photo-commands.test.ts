@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -9,6 +9,7 @@ import {
   testPhotoId,
   tinyJpeg,
 } from '@glimpse/server/testing';
+import { Effect, type FileSystem, PlatformError } from 'effect';
 import { reported } from './cli.ts';
 import {
   failureOf,
@@ -36,6 +37,41 @@ const sendOriginal = (id: string, body: Uint8Array<ArrayBuffer>) =>
     headers: { authorization: `Bearer ${phone}`, 'content-type': 'image/jpeg' },
     body,
   });
+
+// Like exFAT, where Linux refuses hard links with EPERM.
+const withoutHardLinks = (
+  fs: FileSystem.FileSystem,
+): FileSystem.FileSystem => ({
+  ...fs,
+  link: (from) =>
+    Effect.fail(
+      PlatformError.systemError({
+        _tag: 'PermissionDenied',
+        module: 'FileSystem',
+        method: 'link',
+        pathOrDescriptor: from,
+      }),
+    ),
+});
+
+/** Has another program save a file at `file` just before glimpse puts one there. */
+const racedTo = (
+  file: string,
+  fs: FileSystem.FileSystem,
+): FileSystem.FileSystem => {
+  const before = (target: string) =>
+    target === file
+      ? Effect.promise(() => writeFile(file, 'theirs'))
+      : Effect.void;
+  return {
+    ...fs,
+    rename: (from, to) => before(to).pipe(Effect.andThen(fs.rename(from, to))),
+    copyFile: (from, to) =>
+      before(to).pipe(Effect.andThen(fs.copyFile(from, to))),
+    open: (path, options) =>
+      before(path).pipe(Effect.andThen(fs.open(path, options))),
+  };
+};
 
 describe('glimpse recent', () => {
   it('lists the photos that arrived, the newest first', async () => {
@@ -150,6 +186,65 @@ describe('glimpse download', () => {
     const failure = await failureOf('download', first, '--to', directory);
     expect(failure._tag).toBe('FileNotSaved');
     expect(await Bun.file(join(directory, `${first}.jpg`)).text()).toBe('mine');
+  });
+
+  it('saves the original on a file system without hard links', async () => {
+    const original = tinyJpeg(4032, 3024);
+    await sendPhoto(fixture.server, phone, first);
+    await sendOriginal(first, original);
+    fixture.fileSystem = withoutHardLinks;
+    const output = await runOk('download', first, '--to', directory);
+    const file = join(directory, `${first}.jpg`);
+    expect(output).toEqual({
+      files: [{ id: first, path: file, bytes: original.length }],
+    });
+    expect(new Uint8Array(await Bun.file(file).arrayBuffer())).toEqual(
+      original,
+    );
+    expect((await stat(file)).mode % 0o1000).toBe(0o600);
+    expect(await readdir(directory)).toEqual([`${first}.jpg`]);
+  });
+
+  it('never replaces a file that appears while it saves without hard links', async () => {
+    const file = join(directory, `${first}.jpg`);
+    await sendPhoto(fixture.server, phone, first);
+    await sendOriginal(first, tinyJpeg(4032, 3024));
+    fixture.fileSystem = (fs) => racedTo(file, withoutHardLinks(fs));
+    const failure = await failureOf('download', first, '--to', directory);
+    expect(failure).toMatchObject({
+      _tag: 'FileNotSaved',
+      message: `${file} already exists. glimpse never replaces a file; choose another directory or remove it.`,
+    });
+    expect(await Bun.file(file).text()).toBe('theirs');
+    expect(await readdir(directory)).toEqual([`${first}.jpg`]);
+  });
+
+  it('leaves no part of the photo when the copy without hard links breaks off', async () => {
+    const file = join(directory, `${first}.jpg`);
+    await sendPhoto(fixture.server, phone, first);
+    await sendOriginal(first, tinyJpeg(4032, 3024));
+    const diskFull = PlatformError.systemError({
+      _tag: 'Unknown',
+      module: 'FileSystem',
+      method: 'writeAll',
+      description: 'No space left on device',
+    });
+    fixture.fileSystem = (fs) => ({
+      ...withoutHardLinks(fs),
+      open: (path, options) =>
+        fs
+          .open(path, options)
+          .pipe(
+            Effect.map((opened) =>
+              path === file
+                ? { ...opened, writeAll: () => Effect.fail(diskFull) }
+                : opened,
+            ),
+          ),
+    });
+    const failure = await failureOf('download', first, '--to', directory);
+    expect(failure._tag).toBe('FileNotSaved');
+    expect(await readdir(directory)).toEqual([]);
   });
 
   it('says when the phone has not sent the original yet', async () => {
