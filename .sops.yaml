@@ -1,0 +1,15 @@
+# Repo-owned SOPS policy. This file is seeded once and never synced.
+keys:
+  - &david-workstation age1gxzu2f027zu227f4wyf4jh5sw0w495482qfzv5flmfyjvgzxm3ys8p9muz
+  # GitHub Actions CI recipient (private key: SOPS_AGE_KEY Actions secret).
+  - &github_actions_ci age1p3fdqx4nj29ve308mtwcuwgfzskn0djarq4dg4t74g8x6cwmnuqqx2wps6
+creation_rules:
+  - path_regex: secrets/dev\.yaml$
+    key_groups:
+      - age:
+          - *david-workstation
+  - path_regex: secrets/ci\.yaml$
+    key_groups:
+      - age:
+          - *david-workstation
+          - *github_actions_ci
