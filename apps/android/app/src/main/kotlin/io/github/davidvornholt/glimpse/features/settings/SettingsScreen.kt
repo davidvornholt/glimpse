@@ -10,12 +10,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -119,7 +119,7 @@ fun SettingsScreen(
                 Text(stringResource(R.string.settings_unpair), color = MaterialTheme.colorScheme.error)
             }
             InfoRow(
-                Icons.Rounded.Sync,
+                Icons.Rounded.Info,
                 stringResource(R.string.settings_version),
                 stringResource(R.string.settings_version_value, versionName, versionCode),
             )

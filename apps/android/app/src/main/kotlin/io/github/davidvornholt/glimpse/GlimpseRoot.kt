@@ -237,6 +237,7 @@ private fun PairedContent(
                             items = items,
                             offline = offline,
                             expanded = sheetExpanded,
+                            expandedFraction = { expandedFraction },
                             hiddenKey = hiddenKey,
                             onToggle = { scope.launch { if (sheetExpanded) sheet.partialExpand() else sheet.expand() } },
                             onOpen = { open(INBOX, it) },

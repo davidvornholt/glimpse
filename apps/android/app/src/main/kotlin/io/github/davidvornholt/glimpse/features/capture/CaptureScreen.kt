@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -58,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -238,6 +240,7 @@ fun CaptureScreen(
             },
             modifier = Modifier.fillMaxSize().onGloballyPositioned { viewfinderBounds = it.boundsInRoot().translate(-origin) },
         )
+        ViewfinderScrims()
         if (!permission.granted && settings.mode == CaptureMode.Photo) {
             CameraPermissionPrompt(
                 state = permission,
@@ -335,6 +338,26 @@ fun CaptureScreen(
     }
 }
 
+/** Darkens the top and bottom of the preview so the white controls read over a bright scene. */
+@Composable
+private fun BoxScope.ViewfinderScrims() {
+    val shade = Color.Black.copy(alpha = SCRIM_ALPHA)
+    Box(
+        Modifier
+            .align(Alignment.TopCenter)
+            .fillMaxWidth()
+            .fillMaxHeight(TOP_SCRIM_HEIGHT)
+            .background(Brush.verticalGradient(listOf(shade, Color.Transparent))),
+    )
+    Box(
+        Modifier
+            .align(Alignment.BottomCenter)
+            .fillMaxWidth()
+            .fillMaxHeight(BOTTOM_SCRIM_HEIGHT)
+            .background(Brush.verticalGradient(0f to Color.Transparent, BOTTOM_SCRIM_RAMP to shade, 1f to shade)),
+    )
+}
+
 @Composable
 private fun GlimpseCameraSurface(
     modifier: Modifier,
@@ -420,7 +443,7 @@ private fun CameraButton(
         modifier = modifier.size(if (large) 56.dp else 48.dp),
         colors =
             IconButtonDefaults.filledIconButtonColors(
-                containerColor = Color.White.copy(alpha = BUTTON_ALPHA),
+                containerColor = Color.Black.copy(alpha = BUTTON_ALPHA),
                 contentColor = Color.White,
             ),
     ) {
@@ -481,4 +504,8 @@ private const val FRAME_WIDTH = 540
 private const val ZOOM_EPSILON = 0.05f
 private const val OFFLINE_AFTER_MILLIS = 3000L
 private const val CHIP_ALPHA = 0.55f
-private const val BUTTON_ALPHA = 0.16f
+private const val BUTTON_ALPHA = 0.4f
+private const val SCRIM_ALPHA = 0.5f
+private const val TOP_SCRIM_HEIGHT = 0.2f
+private const val BOTTOM_SCRIM_HEIGHT = 0.45f
+private const val BOTTOM_SCRIM_RAMP = 0.5f

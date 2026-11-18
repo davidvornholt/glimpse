@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -28,13 +29,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
@@ -52,6 +58,7 @@ import io.github.davidvornholt.glimpse.shared.ui.formatTime
 import io.github.davidvornholt.glimpse.shared.ui.localDate
 import io.github.davidvornholt.glimpse.shared.ui.sharedPhotoKey
 import io.github.davidvornholt.glimpse.shared.ui.uploadStatus
+import java.time.LocalDate
 
 /** The origin of shared-element keys for photos opened from the inbox. */
 const val INBOX = "inbox"
@@ -69,6 +76,7 @@ fun InboxSheet(
     items: List<GalleryItem>,
     offline: Boolean,
     expanded: Boolean,
+    expandedFraction: () -> Float,
     hiddenKey: String?,
     onToggle: () -> Unit,
     onOpen: (GalleryItem) -> Unit,
@@ -76,36 +84,56 @@ fun InboxSheet(
 ) {
     val days = remember(items) { items.groupBy { it.sentAt.localDate() }.toList() }
     Column(modifier.fillMaxSize()) {
-        InboxHeader(count = items.size, expanded = expanded, onToggle = onToggle)
-        if (offline) OfflineBanner()
-        if (items.isEmpty()) {
-            EmptyInbox(Modifier.weight(1f))
-        } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 16.dp),
-            ) {
-                days.forEach { (day, photos) ->
-                    stickyHeader(key = "day-$day") {
-                        Text(
-                            dayLabel(day),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                                    .padding(horizontal = 24.dp, vertical = 12.dp)
-                                    .semantics { heading() },
-                        )
-                    }
-                    items(photos, key = { it.id }) { item ->
-                        InboxRow(item, hiddenKey, onOpen, Modifier.animateItem())
-                    }
+        InboxHeader(count = items.size, expanded = expanded, expandedFraction = expandedFraction, onToggle = onToggle)
+        // Below the peek only the navigation bar shows, so the list fades in as the sheet rises and stays out of TalkBack's way until then.
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .graphicsLayer { alpha = (expandedFraction() * BODY_FADE_SPEED).coerceAtMost(1f) }
+                .then(if (expanded) Modifier else Modifier.clearAndSetSemantics {}),
+        ) {
+            InboxBody(days, offline, hiddenKey, onOpen)
+        }
+        Box(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ColumnScope.InboxBody(
+    days: List<Pair<LocalDate, List<GalleryItem>>>,
+    offline: Boolean,
+    hiddenKey: String?,
+    onOpen: (GalleryItem) -> Unit,
+) {
+    if (offline) OfflineBanner()
+    if (days.isEmpty()) {
+        EmptyInbox(Modifier.weight(1f))
+    } else {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(bottom = 16.dp),
+        ) {
+            days.forEach { (day, photos) ->
+                stickyHeader(key = "day-$day") {
+                    Text(
+                        dayLabel(day),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                                .padding(horizontal = 24.dp, vertical = 12.dp)
+                                .semantics { heading() },
+                    )
+                }
+                items(photos, key = { it.id }) { item ->
+                    InboxRow(item, hiddenKey, onOpen, Modifier.animateItem())
                 }
             }
         }
-        Box(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
 }
 
@@ -113,9 +141,16 @@ fun InboxSheet(
 private fun InboxHeader(
     count: Int,
     expanded: Boolean,
+    expandedFraction: () -> Float,
     onToggle: () -> Unit,
 ) {
     val label = stringResource(if (expanded) R.string.inbox_collapse else R.string.inbox_expand)
+    // The peek sits on the dark camera, so its text starts out light and takes the theme's colours as the sheet rises.
+    val context = LocalContext.current
+    val camera = remember(context) { dynamicDarkColorScheme(context) }
+    val fraction = expandedFraction()
+    val onSurface = lerp(camera.onSurface, MaterialTheme.colorScheme.onSurface, fraction)
+    val onSurfaceVariant = lerp(camera.onSurfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, fraction)
     Column(
         Modifier
             .fillMaxWidth()
@@ -128,7 +163,7 @@ private fun InboxHeader(
                 .padding(top = 10.dp)
                 .size(width = 32.dp, height = 4.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = HANDLE_ALPHA)),
+                .background(onSurfaceVariant.copy(alpha = HANDLE_ALPHA)),
         )
         Row(
             Modifier.fillMaxWidth().weight(1f).padding(horizontal = 24.dp),
@@ -138,13 +173,14 @@ private fun InboxHeader(
             Text(
                 stringResource(R.string.inbox_title),
                 style = MaterialTheme.typography.titleMedium,
+                color = onSurface,
                 modifier = Modifier.semantics { heading() },
             )
             if (count > 0) {
                 Text(
                     pluralStringResource(R.plurals.inbox_count, count, count),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = onSurfaceVariant,
                 )
             }
         }
@@ -250,3 +286,4 @@ private fun EmptyInbox(modifier: Modifier = Modifier) {
 }
 
 private const val HANDLE_ALPHA = 0.4f
+private const val BODY_FADE_SPEED = 3f
