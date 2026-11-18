@@ -97,6 +97,7 @@
     <string name="viewer_save_failed">Das Foto ließ sich nicht speichern. Gib etwas Speicherplatz frei und versuch es noch einmal.</string>
     <string name="viewer_share">Teilen</string>
     <string name="viewer_share_failed">Das Foto ließ sich nicht teilen. Versuch es noch einmal.</string>
+    <string name="viewer_download_failed">Das Foto ließ sich nicht vom Server laden. Versuch es gleich noch einmal.</string>
     <string name="viewer_delete">Löschen</string>
     <string name="viewer_deleted">Foto gelöscht</string>
 

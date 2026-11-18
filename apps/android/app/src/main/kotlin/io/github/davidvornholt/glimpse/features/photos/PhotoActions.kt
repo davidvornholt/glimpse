@@ -39,6 +39,8 @@ class PhotoActions(
                     R.string.viewer_saved
                 } catch (_: IOException) {
                     R.string.viewer_save_failed
+                } catch (_: ApiException) {
+                    R.string.viewer_download_failed
                 }
             snackbar.showSnackbar(message(result))
         }
@@ -64,6 +66,8 @@ class PhotoActions(
                 from.startActivity(Intent.createChooser(send, null))
             } catch (_: IOException) {
                 snackbar.showSnackbar(message(R.string.viewer_share_failed))
+            } catch (_: ApiException) {
+                snackbar.showSnackbar(message(R.string.viewer_download_failed))
             }
         }
     }

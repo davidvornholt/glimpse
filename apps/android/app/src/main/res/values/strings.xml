@@ -98,6 +98,7 @@
     <string name="viewer_save_failed">Couldn’t save the photo. Free up some space and try again.</string>
     <string name="viewer_share">Share</string>
     <string name="viewer_share_failed">Couldn’t share the photo. Try again.</string>
+    <string name="viewer_download_failed">Couldn’t get the photo from the server. Try again in a moment.</string>
     <string name="viewer_delete">Delete</string>
     <string name="viewer_deleted">Photo deleted</string>
 
