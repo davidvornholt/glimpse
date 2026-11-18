@@ -1,0 +1,184 @@
+name: Release Android app
+
+# A push to main that changes the app publishes a signed APK as a GitHub
+# release, which Obtainium on the phone picks up. The gate job confirms that
+# Standards passed on this exact commit, because a squash commit on main is new
+# and the pull request's checks do not cover it. apps/android/src/plan-release.ts
+# decides whether the commit changed the app and numbers the release.
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      gated-sha: ${{ steps.gate.outputs.sha }}
+    steps:
+      - name: Require the standards gate for this exact commit
+        id: gate
+        env:
+          GATE_JOB: check
+          GATE_WORKFLOW: standards.yml
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          deadline=$(($(date -u +%s) + 2400))
+          while :; do
+            run=$(gh api \
+              "repos/$REPOSITORY/actions/workflows/$GATE_WORKFLOW/runs?head_sha=$SHA&event=push&per_page=1" \
+              --jq '.workflow_runs[0] // empty')
+            if [ -n "$run" ] && [ "$(jq -er .status <<<"$run")" = completed ]; then
+              break
+            fi
+            if [ "$(date -u +%s)" -ge "$deadline" ]; then
+              echo "::error::The $GATE_WORKFLOW gate did not complete for $SHA within the deadline"
+              exit 1
+            fi
+            sleep 20
+          done
+
+          test "$(jq -er .head_sha <<<"$run")" = "$SHA"
+          conclusion=$(jq -er .conclusion <<<"$run")
+          if [ "$conclusion" != success ]; then
+            echo "::error::The $GATE_WORKFLOW gate concluded $conclusion for $SHA"
+            exit 1
+          fi
+
+          run_id=$(jq -er .id <<<"$run")
+          job=$(gh api --paginate "repos/$REPOSITORY/actions/runs/$run_id/jobs" \
+            --jq ".jobs[] | select(.name == \"$GATE_JOB\") | .conclusion")
+          if [ "$job" != success ]; then
+            echo "::error::The $GATE_JOB job of run $run_id concluded ${job:-nothing} for $SHA"
+            exit 1
+          fi
+
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: gate
+    if: >-
+      github.repository == 'davidvornholt/glimpse' &&
+      github.ref == 'refs/heads/main' &&
+      needs.gate.outputs.gated-sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # Creates the release and its tag.
+      contents: write
+    # One release at a time, so two runs can't take the same number. A newer
+    # push replaces a run that is still waiting, which loses nothing: the
+    # newer commit contains the older one's changes.
+    concurrency:
+      group: release-android
+      cancel-in-progress: false
+    steps:
+      - name: Checkout the released commit with its tags
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Plan the release
+        id: plan
+        working-directory: apps/android
+        run: |
+          set -euo pipefail
+          bun run --silent release:plan "$RUNNER_TEMP/release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the signing keystore
+        if: steps.plan.outputs.release == 'true'
+        id: keystore
+        uses: ./.github/actions/sops-secret
+        with:
+          age-key: ${{ secrets.SOPS_AGE_KEY }}
+          secret-file: secrets/ci.yaml
+          secret-key: android_signing.keystore
+
+      - name: Resolve the keystore password
+        if: steps.plan.outputs.release == 'true'
+        id: password
+        uses: ./.github/actions/sops-secret
+        with:
+          age-key: ${{ secrets.SOPS_AGE_KEY }}
+          secret-file: secrets/ci.yaml
+          secret-key: android_signing.password
+
+      - name: Build the signed APK
+        if: steps.plan.outputs.release == 'true'
+        working-directory: apps/android
+        env:
+          KEYSTORE_BASE64: ${{ steps.keystore.outputs.value }}
+          GLIMPSE_KEYSTORE_PASSWORD: ${{ steps.password.outputs.value }}
+          GLIMPSE_KEY_PASSWORD: ${{ steps.password.outputs.value }}
+          GLIMPSE_KEY_ALIAS: glimpse
+          VERSION_CODE: ${{ steps.plan.outputs.version-code }}
+          VERSION_NAME: ${{ steps.plan.outputs.version-name }}
+        run: |
+          set -euo pipefail
+          keystore_dir=$(mktemp -d "$RUNNER_TEMP/keystore.XXXXXXXX")
+          trap 'rm -rf "$keystore_dir"' EXIT
+          (umask 077 && base64 --decode <<<"$KEYSTORE_BASE64" > "$keystore_dir/release.p12")
+          unset KEYSTORE_BASE64
+          GLIMPSE_KEYSTORE_FILE="$keystore_dir/release.p12" ./gradlew :app:assembleRelease \
+            -Pglimpse.versionCode="$VERSION_CODE" -Pglimpse.versionName="$VERSION_NAME" \
+            --no-daemon --console=plain
+
+      # Android only installs an update signed with the same key, so a release
+      # signed with any other key would strand every installed copy.
+      - name: Verify the signature and the version
+        if: steps.plan.outputs.release == 'true'
+        working-directory: apps/android
+        env:
+          EXPECTED_CERTIFICATE: 330e96a0e98c9507f60de90c29d4681da407ddab200459beabdf812c12ac079e
+          VERSION_CODE: ${{ steps.plan.outputs.version-code }}
+          VERSION_NAME: ${{ steps.plan.outputs.version-name }}
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/release/app-release.apk
+          build_tools="$ANDROID_HOME/build-tools/37.0.0"
+          certificates=$("$build_tools/apksigner" verify --print-certs "$apk")
+          # With minSdk 31 the APK carries only a v3 signature, which apksigner
+          # prints as "V3.0 Signer: certificate SHA-256 digest: …". Every signer
+          # it lists has to be the release key.
+          signers=$(sed -n 's/^.*[Ss]igner.*certificate SHA-256 digest: //p' <<<"$certificates" | sort -u)
+          if [ "$signers" != "$EXPECTED_CERTIFICATE" ]; then
+            echo "::error::The APK is signed with ${signers:-no certificate}, not the Glimpse release key"
+            exit 1
+          fi
+          package=$("$build_tools/aapt2" dump badging "$apk" | sed -n 1p)
+          if ! grep -Fq " versionCode='$VERSION_CODE' versionName='$VERSION_NAME' " <<<"$package"; then
+            echo "::error::The APK isn't version $VERSION_NAME ($VERSION_CODE): $package"
+            exit 1
+          fi
+
+      - name: Publish the GitHub release
+        if: steps.plan.outputs.release == 'true'
+        working-directory: apps/android
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          TITLE: ${{ steps.plan.outputs.title }}
+          VERSION_NAME: ${{ steps.plan.outputs.version-name }}
+        run: |
+          set -euo pipefail
+          apk="$RUNNER_TEMP/glimpse-$VERSION_NAME.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+          gh release create "$TAG" "$apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SHA" \
+            --title "$TITLE" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
