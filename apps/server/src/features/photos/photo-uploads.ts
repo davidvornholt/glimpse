@@ -8,7 +8,12 @@ import {
 import { maxPreviewEdge, type PhotoMetadata } from '@glimpse/api/photo';
 import { DateTime, Effect, Option, Stream } from 'effect';
 import type { HttpApiError } from 'effect/http-api';
-import { headBytes, jpegSize, looksLike } from './image-checks.ts';
+import {
+  headBytes,
+  jpegSize,
+  looksLike,
+  withoutMetadata,
+} from './image-checks.ts';
 import {
   publicPhoto,
   type StoredPhoto,
@@ -40,23 +45,27 @@ const collect = (body: Upload) =>
     Effect.mapError(tooLarge('preview')),
   );
 
-/** Checks a preview is a JPEG of the allowed size before it is kept. */
-const checkPreview = (bytes: Uint8Array) => {
-  const size = jpegSize(bytes);
-  if (Option.isNone(size)) {
-    return Effect.fail(
-      new InvalidRequest({ message: 'The preview is not a JPEG.' }),
-    );
-  }
-  const { width, height } = size.value;
-  return Math.max(width, height) > maxPreviewEdge
-    ? Effect.fail(
-        new InvalidRequest({
-          message: `The preview is ${width}×${height} px; its longest edge may be ${maxPreviewEdge} px at most.`,
-        }),
-      )
-    : Effect.void;
-};
+/**
+ * A preview fit to keep: a whole JPEG of the allowed size, without the camera
+ * metadata the phone should have left out already.
+ */
+const cleanPreview = (bytes: Uint8Array) =>
+  Effect.gen(function* () {
+    const clean = withoutMetadata(bytes);
+    const size = Option.flatMap(clean, jpegSize);
+    if (Option.isNone(clean) || Option.isNone(size)) {
+      return yield* new InvalidRequest({
+        message: 'The preview is not a whole JPEG.',
+      });
+    }
+    const { width, height } = size.value;
+    if (Math.max(width, height) > maxPreviewEdge) {
+      return yield* new InvalidRequest({
+        message: `The preview is ${width}×${height} px; its longest edge may be ${maxPreviewEdge} px at most.`,
+      });
+    }
+    return clean.value;
+  });
 
 type NewPhoto = {
   readonly id: string;
@@ -141,8 +150,7 @@ export const makeUploads = (state: PhotoState, retentionDays: number) => {
   const putPreview = (id: string, device: Device, body: Upload) =>
     Effect.gen(function* () {
       yield* uploadable(id, device);
-      const bytes = yield* collect(body);
-      yield* checkPreview(bytes);
+      const bytes = yield* cleanPreview(yield* collect(body));
       return yield* Effect.gen(function* () {
         const photo = yield* uploadable(id, device);
         yield* disk

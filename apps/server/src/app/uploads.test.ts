@@ -80,6 +80,25 @@ describe('sending the preview', () => {
     expect(photo.previewBytes).toBe(tinyJpeg(2048, 1536).length);
   });
 
+  it('keeps it without camera metadata', async () => {
+    await registerPhoto(server, phone, id);
+    const clean = tinyJpeg(2048, 1536);
+    const exif = Uint8Array.from(
+      '\xff\xe1\x00\x0cExif\x00\x00GPS!',
+      (character) => character.charCodeAt(0),
+    );
+    const tagged = new Uint8Array(clean.length + exif.length);
+    tagged.set(clean.subarray(0, 2));
+    tagged.set(exif, 2);
+    tagged.set(clean.subarray(2), 2 + exif.length);
+    const response = await putPreview(server, phone, id, tagged);
+    expect(decodePhoto(await response.json()).previewBytes).toBe(clean.length);
+    const kept = await server.fetch(`/v1/photos/${id}/preview`, {
+      headers: bearer(testOwnerToken),
+    });
+    expect(new Uint8Array(await kept.arrayBuffer())).toEqual(clean);
+  });
+
   it('needs the photo registered first', async () => {
     expect((await putPreview(server, phone, id)).status).toBe(404);
   });
@@ -101,7 +120,10 @@ describe('sending the preview', () => {
     );
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
-      error: { tag: 'InvalidRequest', message: 'The preview is not a JPEG.' },
+      error: {
+        tag: 'InvalidRequest',
+        message: 'The preview is not a whole JPEG.',
+      },
     });
   });
 

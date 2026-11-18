@@ -157,3 +157,118 @@ export const jpegSize = (bytes: Uint8Array): Option.Option<Size> => {
   }
   return Option.none();
 };
+
+// Segments that describe the photo rather than draw it are dropped: EXIF and
+// XMP (APP1), IPTC (APP13), the maker notes other application segments hold,
+// and comments. The JFIF header (APP0), the colour profile (an APP2 segment
+// named ICC_PROFILE) and Adobe's colour transform (APP14) stay, because they
+// change how the image looks.
+const firstApplication = 0xe0;
+const lastApplication = 0xef;
+const jfifHeader = 0xe0;
+const colourSegment = 0xe2;
+const adobeTransform = 0xee;
+const comment = 0xfe;
+const endOfImage = 0xd9;
+const lastRestart = 0xd7;
+const stuffedZero = 0x00;
+const iccName = 'ICC_PROFILE\x00';
+
+const keepsSegment = (bytes: Uint8Array, offset: number, marker: number) => {
+  if (marker === comment) {
+    return false;
+  }
+  if (marker < firstApplication || marker > lastApplication) {
+    return true;
+  }
+  if (marker === jfifHeader || marker === adobeTransform) {
+    return true;
+  }
+  return (
+    marker === colourSegment &&
+    latin1(bytes, offset + markerBytes + lengthBytes, iccName.length) ===
+      iccName
+  );
+};
+
+/**
+ * Where the compressed image data after a start-of-scan header ends: at the
+ * first marker that is neither a stuffed zero, a restart, nor a fill byte.
+ */
+const scanEnd = (bytes: Uint8Array, start: number) => {
+  for (let at = start; at + 1 < bytes.length; at += 1) {
+    const next = bytes[at + 1] ?? stuffedZero;
+    const inData =
+      next === stuffedZero ||
+      next === markerByte ||
+      (next >= firstRestart && next <= lastRestart);
+    if (bytes[at] === markerByte && !inData) {
+      return at;
+    }
+  }
+  return bytes.length;
+};
+
+type Segment =
+  | { readonly next: number; readonly keep: boolean }
+  | 'end'
+  | 'broken';
+
+/** The segment at `offset`, with where the next one starts. */
+const segmentAt = (bytes: Uint8Array, view: DataView, offset: number) => {
+  const marker = bytes[offset + 1];
+  if (bytes[offset] !== markerByte || marker === undefined) {
+    return 'broken';
+  }
+  if (marker === endOfImage) {
+    return 'end';
+  }
+  if (marker === markerByte) {
+    return { next: offset + 1, keep: false };
+  }
+  if (standsAlone(marker)) {
+    return { next: offset + markerBytes, keep: true };
+  }
+  if (offset + markerBytes + lengthBytes > bytes.length) {
+    return 'broken';
+  }
+  const end = offset + markerBytes + view.getUint16(offset + markerBytes);
+  if (end < offset + markerBytes + lengthBytes || end > bytes.length) {
+    return 'broken';
+  }
+  return {
+    next: marker === startOfScan ? scanEnd(bytes, end) : end,
+    keep: keepsSegment(bytes, offset, marker),
+  } satisfies Segment;
+};
+
+/**
+ * A JPEG without the metadata a camera writes, such as where and when it was
+ * taken, and without anything after its end, such as a gain map or a motion
+ * photo with metadata of its own. Nothing when it is not a whole JPEG.
+ */
+export const withoutMetadata = (
+  bytes: Uint8Array,
+): Option.Option<Uint8Array> => {
+  if (!startsWith(bytes, jpegSignature)) {
+    return Option.none();
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const kept = [bytes.subarray(0, markerBytes)];
+  let offset = markerBytes;
+  while (offset < bytes.length) {
+    const segment: Segment = segmentAt(bytes, view, offset);
+    if (segment === 'broken') {
+      return Option.none();
+    }
+    if (segment === 'end') {
+      kept.push(bytes.subarray(offset, offset + markerBytes));
+      return Option.some(Buffer.concat(kept));
+    }
+    if (segment.keep) {
+      kept.push(bytes.subarray(offset, segment.next));
+    }
+    offset = segment.next;
+  }
+  return Option.none();
+};

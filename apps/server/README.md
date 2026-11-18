@@ -15,7 +15,7 @@ It listens on `127.0.0.1:8787`, keeps its data in `apps/server/.data`, and accep
 curl -s -X POST -H 'Authorization: Bearer dev-owner-token' http://127.0.0.1:8787/v1/pairings
 ```
 
-`PORT` and `GLIMPSE_HOST` change where it listens. Delete `apps/server/.data` to start over.
+`PORT` changes the port it listens on and the one in pairing links; `GLIMPSE_HOST` changes the address it listens on. Delete `apps/server/.data` to start over.
 
 ## Configuration in production
 

@@ -7,7 +7,10 @@ export const keepAliveSeconds = 20;
 const json = <S extends Schema.Top>(schema: S) =>
   Schema.fromJsonString(Schema.toCodecJson(schema));
 
-/** A photo was created, became ready, changed, or was first viewed. */
+/**
+ * A ready photo arrived or changed, such as its note, its original, or its
+ * first view. Photos still waiting for their preview are not announced.
+ */
 export const PhotoEventSchema = Schema.Struct({
   event: Schema.Literal('photo'),
   data: json(PhotoSchema),

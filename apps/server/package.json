@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./testing": "./src/app/testing.ts"
+  },
   "scripts": {
     "build": "bun build --compile src/app/main.ts --outfile dist/glimpse-server",
     "check-types": "tsc --noEmit",

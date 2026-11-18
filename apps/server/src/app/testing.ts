@@ -74,7 +74,7 @@ export const startTestServer = async (
 const startOfImage = '\xff\xd8';
 // The marker, the segment's length, and eight-bit samples.
 const frameHeader = '\xff\xc0\x00\x11\x08';
-const threeComponents = '\x03\x01\x22\x00\x02\x11\x01\x03\x11';
+const threeComponents = '\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01';
 const endOfImage = '\xff\xd9';
 const byteValues = 256;
 
