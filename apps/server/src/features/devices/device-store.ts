@@ -12,6 +12,7 @@ import {
   Semaphore,
 } from 'effect';
 import { ServerConfig } from '../../shared/config.ts';
+import { DeviceRemovals } from '../../shared/device-removals.ts';
 import { makeDisk } from '../../shared/files.ts';
 import {
   newDeviceId,
@@ -65,12 +66,12 @@ export class DeviceStore extends Context.Service<
     DeviceStore,
     Effect.gen(function* () {
       const { dataDirectory } = yield* ServerConfig;
+      const removals = yield* DeviceRemovals;
       const disk = yield* makeDisk;
-      const { path } = disk;
       yield* disk.fs
         .makeDirectory(dataDirectory, { recursive: true })
         .pipe(Effect.orDie);
-      const file = path.join(dataDirectory, 'devices.json');
+      const file = disk.path.join(dataDirectory, 'devices.json');
       const decode = Schema.decodeEffect(DevicesFileSchema);
       const encode = Schema.encodeEffect(DevicesFileSchema);
       const initial = yield* disk.readTextIfPresent(file).pipe(
@@ -163,7 +164,7 @@ export class DeviceStore extends Context.Service<
             : Effect.fail(
                 new NotFound({ message: `No paired phone has the id ${id}.` }),
               ),
-        );
+        ).pipe(Effect.andThen(removals.removed(id)));
 
       return {
         list: Ref.get(devices).pipe(Effect.map((all) => all.map(publicDevice))),

@@ -4,11 +4,15 @@ import { Option } from 'effect';
 import {
   bearer,
   newPairingCode,
+  openEvents,
   pairPhone,
+  sendPhoto,
+  sentEvents,
   startTestServer,
   type TestServer,
   testOrigin,
   testOwnerToken,
+  testPhotoId,
 } from './testing.ts';
 
 const pairingCode = /^[A-Z2-7]{24}$/u;
@@ -113,6 +117,16 @@ describe('pairing a phone', () => {
     expect(text).not.toContain('token');
   });
 
+  it('remembers paired phones across a restart', async () => {
+    const { token } = await pairPhone(server);
+    await server.stop();
+    server = await startTestServer({ dataDirectory: server.dataDirectory });
+    const me = await server.fetch('/v1/me', { headers: bearer(token) });
+    expect(me.status).toBe(200);
+  });
+});
+
+describe('removing a phone', () => {
   it('stops taking the token of a phone the owner removed', async () => {
     const { token, device } = await pairPhone(server);
     const removed = await server.fetch(`/v1/devices/${device.id}`, {
@@ -129,11 +143,40 @@ describe('pairing a phone', () => {
     expect(again.status).toBe(404);
   });
 
-  it('remembers paired phones across a restart', async () => {
-    const { token } = await pairPhone(server);
-    await server.stop();
-    server = await startTestServer({ dataDirectory: server.dataDirectory });
-    const me = await server.fetch('/v1/me', { headers: bearer(token) });
-    expect(me.status).toBe(200);
+  it('ends the event stream of a phone the owner removed, and no other', async () => {
+    const removed = await pairPhone(server, 'Pixel');
+    const kept = await pairPhone(server, 'Tablet');
+    const [phoneEvents, keptEvents, ownerEvents] = await Promise.all([
+      openEvents(server, removed.token),
+      openEvents(server, kept.token),
+      openEvents(server, testOwnerToken),
+    ]);
+    const opened = (text: string) => text.includes('event: waiting');
+    await Promise.all(
+      [phoneEvents, keptEvents, ownerEvents].map((events) =>
+        events.readUntil(opened),
+      ),
+    );
+    const response = await server.fetch(`/v1/devices/${removed.device.id}`, {
+      method: 'DELETE',
+      headers: owner,
+    });
+    expect(response.status).toBe(204);
+
+    await sendPhoto(server, kept.token, testPhotoId(1));
+    const photoSent = (text: string) =>
+      sentEvents(text).some(({ event }) => event === 'photo');
+    await Promise.all(
+      [phoneEvents, keptEvents, ownerEvents].map((events) =>
+        events.readUntil(photoSent),
+      ),
+    );
+    expect(phoneEvents.ended()).toBe(true);
+    expect(photoSent(phoneEvents.text())).toBe(false);
+    for (const events of [keptEvents, ownerEvents]) {
+      expect(events.ended()).toBe(false);
+      expect(photoSent(events.text())).toBe(true);
+    }
+    await Promise.all([keptEvents.close(), ownerEvents.close()]);
   });
 });

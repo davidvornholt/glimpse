@@ -166,6 +166,86 @@ export const putPreview = (
     body,
   });
 
+const readMillis = 2000;
+
+/** A `GET /v1/events` held open, and what it has sent so far. */
+export type EventStream = {
+  readonly text: () => string;
+  /** Whether the server has ended the stream. */
+  readonly ended: () => boolean;
+  /**
+   * Reads until `done` holds for the text so far, the stream ends, or two
+   * seconds pass, whichever comes first.
+   */
+  readonly readUntil: (done: (text: string) => boolean) => Promise<void>;
+  readonly close: () => Promise<void>;
+};
+
+export const openEvents = async (
+  server: TestServer,
+  token: string,
+): Promise<EventStream> => {
+  const response = await server.fetch('/v1/events', { headers: bearer(token) });
+  const reader = response.body?.getReader();
+  if (reader === undefined) {
+    throw new Error(
+      `The event stream answered ${response.status} and no body.`,
+    );
+  }
+  const decoder = new TextDecoder();
+  let text = '';
+  let ended = false;
+  // One read at a time: a read the time ran out on is kept for the next call,
+  // so no chunk is lost.
+  let pending: ReturnType<typeof reader.read> | undefined;
+  const readUntil = async (
+    done: (text: string) => boolean,
+    deadline: number,
+  ): Promise<void> => {
+    if (ended || done(text)) {
+      return;
+    }
+    pending ??= reader.read();
+    const result = await Promise.race([
+      pending,
+      Bun.sleep(Math.max(0, deadline - Date.now())).then(() => undefined),
+    ]);
+    if (result === undefined) {
+      return;
+    }
+    pending = undefined;
+    if (result.done) {
+      ended = true;
+      return;
+    }
+    text += decoder.decode(result.value, { stream: true });
+    return readUntil(done, deadline);
+  };
+  return {
+    text: () => text,
+    ended: () => ended,
+    readUntil: (done) => readUntil(done, Date.now() + readMillis),
+    close: () => reader.cancel(),
+  };
+};
+
+/** The events in what an event stream sent, each with its data parsed. */
+export const sentEvents = (text: string) =>
+  text.split('\n\n').flatMap((block) => {
+    const lines = block.split('\n');
+    const field = (name: string) => {
+      const prefix = `${name}: `;
+      return lines
+        .find((line) => line.startsWith(prefix))
+        ?.slice(prefix.length);
+    };
+    const event = field('event');
+    const data = field('data');
+    return event === undefined || data === undefined
+      ? []
+      : [{ event, data: JSON.parse(data) as unknown }];
+  });
+
 /** Registers a photo and sends its preview, which makes it ready. */
 export const sendPhoto = async (
   server: TestServer,

@@ -16,6 +16,7 @@ import { PhotoStore } from '../features/photos/photo-store.ts';
 import { RetentionLive } from '../features/photos/retention.ts';
 import { Waiters } from '../features/photos/waiters.ts';
 import type { ServerConfig } from '../shared/config.ts';
+import { DeviceRemovals } from '../shared/device-removals.ts';
 import { errorEnvelope } from '../shared/error-envelope.ts';
 
 const HealthLive = HttpApiBuilder.group(GlimpseApi, 'health', (handlers) =>
@@ -35,7 +36,10 @@ const Stores = Layer.mergeAll(
   PhotoStore.layer,
   DeviceStore.layer,
   Waiters.layer,
-).pipe(Layer.provideMerge(EventBus.layer));
+).pipe(
+  Layer.provideMerge(EventBus.layer),
+  Layer.provideMerge(DeviceRemovals.layer),
+);
 
 /**
  * The whole server but the socket: the API, its stores, and the hourly
