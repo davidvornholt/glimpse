@@ -63,6 +63,9 @@ class PhotoLibrary(
         scope.launch {
             captures.load()
             captures.prune()
+            // An upload whose work was lost, for example because the process died
+            // before it was queued, carries on.
+            if (sessions.currentSession() != null) resumeUploads()
         }
     }
 
@@ -296,11 +299,11 @@ class PhotoLibrary(
         hidden.value = emptySet()
     }
 
-    /** Uploads whatever waited while the phone was unpaired. */
+    /** Queues every unfinished upload that has no work, such as those that waited while the phone was unpaired. */
     suspend fun resumeUploads() {
         captures.load()
         captures.records.value.values
             .filter { !it.isDone && it.failure == null }
-            .forEach { uploads.enqueue(it.id) }
+            .forEach { uploads.resume(it.id) }
     }
 }

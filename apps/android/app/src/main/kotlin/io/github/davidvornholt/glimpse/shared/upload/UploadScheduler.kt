@@ -36,17 +36,23 @@ class UploadScheduler(
     private val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
     fun enqueue(id: String) {
-        val request =
-            OneTimeWorkRequestBuilder<UploadWorker>()
-                .setInputData(workDataOf(UploadWorker.KEY_ID to id))
-                .setConstraints(constraints)
-                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF)
-                .addTag(TAG)
-                .build()
         // A change while an upload runs, such as a new note, queues another run behind it.
-        workManager.enqueueUniqueWork(name(id), ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+        workManager.enqueueUniqueWork(name(id), ExistingWorkPolicy.APPEND_OR_REPLACE, request(id))
     }
+
+    /** Queues an upload that has no work waiting or running, and leaves one that has alone. */
+    fun resume(id: String) {
+        workManager.enqueueUniqueWork(name(id), ExistingWorkPolicy.KEEP, request(id))
+    }
+
+    private fun request(id: String) =
+        OneTimeWorkRequestBuilder<UploadWorker>()
+            .setInputData(workDataOf(UploadWorker.KEY_ID to id))
+            .setConstraints(constraints)
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF)
+            .addTag(TAG)
+            .build()
 
     fun cancel(id: String) {
         workManager.cancelUniqueWork(name(id))
