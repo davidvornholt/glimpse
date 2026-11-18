@@ -1,5 +1,6 @@
 package io.github.davidvornholt.glimpse.shared.image
 
+import io.github.davidvornholt.glimpse.shared.api.OriginalType
 import java.io.ByteArrayOutputStream
 
 /**
@@ -9,6 +10,28 @@ import java.io.ByteArrayOutputStream
  * profiles stay, so the image looks the same.
  */
 object MetadataStripper {
+    /**
+     * Strips a JPEG, PNG or WebP. An image that is broken or isn't of [type]
+     * throws [UnusableImageException], because it comes from another app.
+     */
+    fun strip(
+        input: ByteArray,
+        type: OriginalType,
+        orientation: Int = 1,
+    ): ByteArray =
+        try {
+            when (type) {
+                OriginalType.Jpeg -> stripJpeg(input, orientation)
+                OriginalType.Png -> stripPng(input)
+                OriginalType.Webp -> stripWebp(input)
+                else -> throw IllegalArgumentException("$type isn't stripped losslessly")
+            }
+        } catch (error: IllegalArgumentException) {
+            throw UnusableImageException(error.message ?: "The image is broken")
+        } catch (_: IndexOutOfBoundsException) {
+            throw UnusableImageException("The image is broken")
+        }
+
     /**
      * Strips a JPEG. When [orientation] isn't 1, a minimal EXIF block that
      * holds only the orientation goes back in, so the photo stays upright.

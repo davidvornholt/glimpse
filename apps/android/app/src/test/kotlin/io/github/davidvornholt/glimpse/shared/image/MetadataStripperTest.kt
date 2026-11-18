@@ -1,5 +1,6 @@
 package io.github.davidvornholt.glimpse.shared.image
 
+import io.github.davidvornholt.glimpse.shared.api.OriginalType
 import java.io.ByteArrayOutputStream
 import java.util.zip.CRC32
 import kotlin.test.Test
@@ -158,5 +159,25 @@ class MetadataStripperTest {
         assertFailsWith<IllegalArgumentException> {
             MetadataStripper.stripWebp(join(ascii("RIFF"), littleEndian(100), ascii("WEBP"), ascii("VP8L"), littleEndian(90), bytes(1, 2)))
         }
+    }
+
+    // Images come from other apps, so a broken one has to fail like an unreadable one, not crash the app.
+    @Test
+    fun `turns a broken image into an unusable one`() {
+        assertFailsWith<UnusableImageException> { MetadataStripper.strip(join(soi, jfif).copyOf(10), OriginalType.Jpeg) }
+        assertFailsWith<UnusableImageException> { MetadataStripper.strip(join(soi, jfif, quantization), OriginalType.Jpeg) }
+        assertFailsWith<UnusableImageException> { MetadataStripper.strip(pngSignature, OriginalType.Png) }
+        assertFailsWith<UnusableImageException> {
+            MetadataStripper.strip(
+                join(ascii("RIFF"), littleEndian(4), ascii("WAVE")),
+                OriginalType.Webp,
+            )
+        }
+        assertFailsWith<UnusableImageException> { MetadataStripper.strip(join(soi, jfif, eoi), OriginalType.Heic) }
+    }
+
+    @Test
+    fun `strips each type it takes`() {
+        assertContentEquals(join(soi, jfif, eoi), MetadataStripper.strip(join(soi, jfif, exif, eoi), OriginalType.Jpeg))
     }
 }

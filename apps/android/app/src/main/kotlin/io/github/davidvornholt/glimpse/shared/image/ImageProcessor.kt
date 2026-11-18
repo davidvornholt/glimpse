@@ -45,51 +45,35 @@ class ImageProcessor(
     ): PreparedImage =
         withContext(Dispatchers.IO) {
             val bytes = jpeg.readBytes()
-            prepareBytes(bytes, original, OriginalType.Jpeg).also { jpeg.delete() }
+            prepareBytes(bytes, original, OriginalType.Jpeg, orientationOf(bytes)).also { jpeg.delete() }
         }
 
-    /** Reads a shared image and writes its stripped original to [original]. */
+    /** Reads a shared image and writes its stripped original to the file [original] names for its type. */
     suspend fun prepareShared(
         uri: Uri,
         original: (OriginalType) -> File,
     ): Pair<File, PreparedImage> =
         withContext(Dispatchers.IO) {
             val bytes =
-                resolver.openInputStream(uri)?.use { input -> readLimited(input.buffered()) }
-                    ?: throw UnusableImageException("The image can't be read")
-            val type = sniff(bytes)
-            when (type) {
-                OriginalType.Jpeg, OriginalType.Png, OriginalType.Webp -> {
-                    val file = original(type)
-                    file to prepareBytes(bytes, file, type)
-                }
-
-                // HEIF, AVIF and anything else are turned into a JPEG, which drops their metadata.
-                else -> {
-                    val file = original(OriginalType.Jpeg)
-                    file to reencode(bytes, file)
-                }
-            }
+                try {
+                    resolver.openInputStream(uri)?.use { input -> readLimited(input.buffered()) }
+                } catch (_: SecurityException) {
+                    null
+                } ?: throw UnusableImageException("The image can't be read")
+            val sniffed = sniff(bytes)
+            val orientation = orientationOf(bytes)
+            val type = uploadTypeFor(sniffed, orientation)
+            val file = original(type)
+            file to if (type == sniffed) prepareBytes(bytes, file, type, orientation) else reencode(bytes, file)
         }
 
     private fun prepareBytes(
         bytes: ByteArray,
         target: File,
         type: OriginalType,
+        orientation: Int,
     ): PreparedImage {
-        val orientation = orientationOf(bytes)
-        val stripped =
-            when (type) {
-                OriginalType.Jpeg -> MetadataStripper.stripJpeg(bytes, orientation)
-
-                // PNG and WebP keep no orientation once their EXIF is gone, so a
-                // rotated one is turned into an upright JPEG instead.
-                OriginalType.Png -> if (orientation == 1) MetadataStripper.stripPng(bytes) else return reencode(bytes, target)
-
-                OriginalType.Webp -> if (orientation == 1) MetadataStripper.stripWebp(bytes) else return reencode(bytes, target)
-
-                else -> error("$type isn't stripped losslessly")
-            }
+        val stripped = MetadataStripper.strip(bytes, type, orientation)
         writeAtomically(target, stripped)
         val bounds = bounds(stripped)
         val turned = orientation in TURNED
@@ -239,6 +223,22 @@ class ImageProcessor(
         private const val QUALITY_STEP = 10
         private const val BUFFER = 64 * 1024
         private val TURNED = setOf(5, 6, 7, 8)
+
+        /**
+         * The type a shared image is uploaded as. JPEG, and PNG or WebP that
+         * need no rotation, are stripped as they are. PNG and WebP keep no
+         * orientation once their EXIF is gone, so a rotated one becomes an
+         * upright JPEG, as do HEIF, AVIF and anything else.
+         */
+        fun uploadTypeFor(
+            sniffed: OriginalType?,
+            orientation: Int,
+        ): OriginalType =
+            when (sniffed) {
+                OriginalType.Jpeg -> OriginalType.Jpeg
+                OriginalType.Png, OriginalType.Webp -> if (orientation == 1) sniffed else OriginalType.Jpeg
+                else -> OriginalType.Jpeg
+            }
 
         /** The image type, read from the bytes rather than trusting what the sender claimed. */
         fun sniff(bytes: ByteArray): OriginalType? {
