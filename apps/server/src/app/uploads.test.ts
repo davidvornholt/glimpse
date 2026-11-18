@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { GlimpseApi } from '@glimpse/api/api';
+import { Authorization } from '@glimpse/api/authorization';
+import { DateTime, Effect } from 'effect';
+import { FetchHttpClient, HttpClientRequest } from 'effect/http';
+import { HttpApiClient, HttpApiMiddleware } from 'effect/http-api';
 import {
   bearer,
   decodePhoto,
   pairPhone,
   putPreview,
   registerPhoto,
+  sampleMetadata,
   startTestServer,
   type TestServer,
+  testOrigin,
   testOwnerToken,
   testPhotoId,
   tinyJpeg,
@@ -41,6 +48,36 @@ describe('registering a photo', () => {
     expect(photo.readyAt).toBeNull();
     expect(photo.deviceName).toBe('Pixel');
     expect((await registerPhoto(server, phone, id)).status).toBe(200);
+  });
+
+  it('answers both times in a way a client made from the contract reads', async () => {
+    const client = HttpApiClient.make(GlimpseApi, { baseUrl: testOrigin });
+    const authorization = HttpApiMiddleware.layerClient(
+      Authorization,
+      ({ request, next }) =>
+        next(HttpClientRequest.bearerToken(request, phone)),
+    );
+    const register = Effect.flatMap(client, (api) =>
+      api.photos.register({
+        params: { id },
+        payload: {
+          ...sampleMetadata,
+          takenAt: DateTime.makeUnsafe(sampleMetadata.takenAt),
+        },
+      }),
+    );
+    const [first, again] = await Effect.runPromise(
+      Effect.all([register, register]).pipe(
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provide(authorization),
+        Effect.provideService(
+          FetchHttpClient.Fetch,
+          server.fetch as typeof globalThis.fetch,
+        ),
+      ),
+    );
+    expect(first.id).toBe(id);
+    expect(again).toEqual(first);
   });
 
   it('refuses other details under the same id', async () => {

@@ -110,7 +110,7 @@ export const PhotosApi = HttpApiGroup.make('photos')
     HttpApiEndpoint.put('register', '/photos/:id', {
       params: photoParams,
       payload: PhotoMetadataSchema,
-      success: PhotoSchema,
+      success: [PhotoSchema, PhotoSchema.pipe(HttpApiSchema.status(created))],
       error: [ForbiddenBody, ConflictBody, InvalidRequestBody],
     }),
     /** A JPEG of at most 2048 px on its longest edge. It makes the photo ready. */
