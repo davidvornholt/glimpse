@@ -1,6 +1,8 @@
 package io.github.davidvornholt.glimpse
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.fadeIn
@@ -44,6 +46,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.davidvornholt.glimpse.features.capture.CaptureScreen
 import io.github.davidvornholt.glimpse.features.capture.FILMSTRIP
@@ -55,6 +58,7 @@ import io.github.davidvornholt.glimpse.features.photos.InboxSheet
 import io.github.davidvornholt.glimpse.features.photos.PhotoActions
 import io.github.davidvornholt.glimpse.features.photos.PhotoViewer
 import io.github.davidvornholt.glimpse.features.settings.SettingsScreen
+import io.github.davidvornholt.glimpse.shared.network.LocalNetwork
 import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import io.github.davidvornholt.glimpse.shared.photos.Connection
 import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
@@ -176,6 +180,14 @@ private fun PairedContent(
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     val viewerOpenChange by rememberUpdatedState(onViewerOpenChange)
     LaunchedEffect(viewerOpen) { viewerOpenChange(viewerOpen) }
+
+    // Pairing asked for local network access, but a revoke or a restore to a new phone takes it away again,
+    // and without it every upload to a server on the home network just times out.
+    val localNetwork = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(session.server) {
+        val host = session.server.toUri().host ?: return@LaunchedEffect
+        if (!LocalNetwork.isAllowed(context) && LocalNetwork.isLocal(host)) localNetwork.launch(LocalNetwork.PERMISSION)
+    }
 
     // A shortcut or the tile asked for the camera: put it in front.
     LaunchedEffect(requests.camera) {
