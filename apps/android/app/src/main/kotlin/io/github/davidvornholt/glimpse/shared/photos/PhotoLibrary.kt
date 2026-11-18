@@ -146,8 +146,9 @@ class PhotoLibrary(
             processor.writePreview(original, File(directory, "preview.jpg"))
             val note = settings.takePendingNote()
             captures.add(record.copy(width = prepared.width, height = prepared.height, note = note))
-            uploads.enqueue(id)
+            // The copy goes first, because the upload deletes the original once the server has it.
             keepCopyIfWanted(original, OriginalType.Jpeg, id)
+            uploads.enqueue(id)
         } finally {
             dropPending(id)
         }
@@ -185,8 +186,8 @@ class PhotoLibrary(
                         batchId = batchId,
                     ),
                 )
-                uploads.enqueue(id)
                 if (source == PhotoSource.Scan) keepCopyIfWanted(original, prepared.type, id)
+                uploads.enqueue(id)
                 added++
             } catch (_: IOException) {
                 captures.remove(id)
