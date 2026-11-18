@@ -5,9 +5,11 @@ import { DateTime } from 'effect';
 import {
   bearer,
   decodePhoto,
+  openEvents,
   pairPhone,
   registerPhoto,
   sendPhoto,
+  sentEvents,
   startTestServer,
   type TestServer,
   testOwnerToken,
@@ -119,6 +121,57 @@ describe('waiting for a photo', () => {
     expect(text).toContain('event: waiting');
     expect(text).toContain('{"count":0}');
     await reader?.cancel();
+  });
+});
+
+describe('counting the agents that wait', () => {
+  it('shows one wait as one until it is cancelled and its grace passes', async () => {
+    await server.close();
+    server = await startTestServer({ testClock: true });
+    phone = (await pairPhone(server)).token;
+    // A photo still being sent, whose deletion the stream reports after every
+    // event before it.
+    const marker = testPhotoId(1);
+    await registerPhoto(server, phone, marker);
+    const events = await openEvents(server, phone);
+    const counts = () =>
+      sentEvents(events.text()).flatMap(({ event, data }) =>
+        event === 'waiting' ? [(data as { count: number }).count] : [],
+      );
+    const after = new Date().toISOString();
+    const wait = (timeoutSeconds: number, signal?: AbortSignal) =>
+      server.fetch(
+        `/v1/photos/wait?after=${after}&timeoutSeconds=${timeoutSeconds}&waiter=agent-1`,
+        { headers: owner, signal },
+      );
+    await events.readUntil(() => counts().length === 1);
+
+    const first = wait(1);
+    await events.readUntil(() => counts().length === 2);
+    expect(counts()).toEqual([0, 1]);
+
+    // The first request times out, and the agent asks again within the grace.
+    await server.adjustClock('1 second');
+    expect(await (await first).json()).toEqual({ photos: [] });
+    const cancel = new AbortController();
+    const second = wait(60, cancel.signal);
+    await Bun.sleep(50);
+    await server.adjustClock('5 seconds');
+    await server.fetch(`/v1/photos/${marker}`, {
+      method: 'DELETE',
+      headers: owner,
+    });
+    await events.readUntil((text) => text.includes('event: photo-deleted'));
+    expect(counts()).toEqual([0, 1]);
+
+    cancel.abort();
+    await second;
+    // Lets the grace the cancelled wait started begin before the clock moves.
+    await Bun.sleep(50);
+    await server.adjustClock('5 seconds');
+    await events.readUntil(() => counts().length === 3);
+    expect(counts()).toEqual([0, 1, 0]);
+    await events.close();
   });
 });
 
