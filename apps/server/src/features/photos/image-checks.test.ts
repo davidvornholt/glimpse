@@ -50,7 +50,8 @@ describe('withoutMetadata', () => {
   // Segments as Latin-1 text: the marker, then a length that counts itself.
   const segment = (marker: string, body: string) =>
     `\xff${marker}\x00${String.fromCharCode(body.length + 2)}${body}`;
-  const jfif = segment('\xe0', 'JFIF\x00\x01\x02');
+  // Version 1.2, square pixels, no thumbnail.
+  const jfif = segment('\xe0', 'JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00');
   const exif = segment('\xe1', 'Exif\x00\x00GPS 48.1N 11.5E');
   const xmp = segment('\xe1', 'http://ns.adobe.com/xap/1.0/\x00<x/>');
   const icc = segment('\xe2', 'ICC_PROFILE\x00\x01\x01sRGB');
@@ -74,7 +75,10 @@ describe('withoutMetadata', () => {
     const ciff = segment('\xe0', 'II\x1a\x00\x00\x00HEAPJPGMOwner: Jane');
     const adobe = segment('\xee', 'Adobe\x00\x64\x00\x00\x00\x00\x01');
     const otherApp14 = segment('\xee', 'Owner: Jane');
-    const photo = `\xff\xd8${jfif}${thumbnail}${ciff}${adobe}${otherApp14}${frame}${scan}${end}`;
+    // Shorter than the fields they must hold.
+    const shortJfif = segment('\xe0', 'JFIF\x00\x01\x02');
+    const shortAdobe = segment('\xee', 'Adobe\x00\x64');
+    const photo = `\xff\xd8${jfif}${thumbnail}${ciff}${shortJfif}${adobe}${otherApp14}${shortAdobe}${frame}${scan}${end}`;
     const kept = `\xff\xd8${jfif}${adobe}${frame}${scan}${end}`;
     expect(withoutMetadata(bytes(photo))).toEqual(Option.some(bytes(kept)));
   });

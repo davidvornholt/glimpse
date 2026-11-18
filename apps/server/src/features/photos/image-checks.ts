@@ -162,8 +162,10 @@ export const jpegSize = (bytes: Uint8Array): Option.Option<Size> => {
 // XMP (APP1), IPTC (APP13), the maker notes other application segments hold,
 // such as Canon's owner name or a JFXX thumbnail in APP0, and comments. Only
 // the application segments that change how the image looks stay, each known
-// by the name it opens with: the JFIF header (APP0), the colour profile
-// (APP2) and Adobe's colour transform (APP14).
+// by the name it opens with: the colour profile (APP2) whole, and the fixed
+// fields of the JFIF header (APP0) and of Adobe's colour transform (APP14)
+// without what follows them. The JFIF header loses its thumbnail, which can
+// show what a crop removed. Either is dropped when shorter than its fields.
 const firstApplication = 0xe0;
 const lastApplication = 0xef;
 const jfifHeader = 0xe0;
@@ -173,24 +175,65 @@ const comment = 0xfe;
 const endOfImage = 0xd9;
 const lastRestart = 0xd7;
 const stuffedZero = 0x00;
-const keptApplications = new Map([
-  [jfifHeader, 'JFIF\x00'],
-  [colourSegment, 'ICC_PROFILE\x00'],
-  [adobeTransform, 'Adobe'],
+// The JFIF header's length counts `JFIF\0`, the version (2 bytes), the units,
+// the X and Y density (2 bytes each), and the thumbnail's width and height (1
+// byte each), which are set to zero. Adobe's counts `Adobe`, the version and
+// two sets of flags (2 bytes each), and the transform.
+const jfifLength = 16;
+const thumbnailSizeBytes = 2;
+const adobeLength = 14;
+
+/**
+ * A segment cut to the first `length` bytes its length field counts, with the
+ * field set to `length`. Nothing when the segment is shorter.
+ */
+const fixedPart = (segment: Uint8Array, length: number) => {
+  if (segment.length < markerBytes + length) {
+    return Option.none<Uint8Array>();
+  }
+  // A copy, since a `Buffer`'s `slice` would share the upload's bytes.
+  const kept = new Uint8Array(segment.subarray(0, markerBytes + length));
+  new DataView(kept.buffer).setUint16(markerBytes, length);
+  return Option.some(kept);
+};
+
+const keptApplications = new Map<
+  number,
+  {
+    readonly name: string;
+    readonly keep: (segment: Uint8Array) => Option.Option<Uint8Array>;
+  }
+>([
+  [
+    jfifHeader,
+    {
+      name: 'JFIF\x00',
+      keep: (segment) =>
+        Option.map(fixedPart(segment, jfifLength), (kept) =>
+          kept.fill(0, -thumbnailSizeBytes),
+        ),
+    },
+  ],
+  [colourSegment, { name: 'ICC_PROFILE\x00', keep: Option.some }],
+  [
+    adobeTransform,
+    { name: 'Adobe', keep: (segment) => fixedPart(segment, adobeLength) },
+  ],
 ]);
 
-const keepsSegment = (bytes: Uint8Array, offset: number, marker: number) => {
+/** What stays of a segment, from its marker to where the next one starts. */
+const keptPart = (segment: Uint8Array, marker: number) => {
   if (marker === comment) {
-    return false;
+    return Option.none<Uint8Array>();
   }
   if (marker < firstApplication || marker > lastApplication) {
-    return true;
+    return Option.some(segment);
   }
-  const name = keptApplications.get(marker);
-  return (
-    name !== undefined &&
-    latin1(bytes, offset + markerBytes + lengthBytes, name.length) === name
-  );
+  const kept = keptApplications.get(marker);
+  return kept !== undefined &&
+    latin1(segment, markerBytes + lengthBytes, kept.name.length) === kept.name
+    ? kept.keep(segment)
+    : Option.none<Uint8Array>();
 };
 
 /**
@@ -212,7 +255,7 @@ const scanEnd = (bytes: Uint8Array, start: number) => {
 };
 
 type Segment =
-  | { readonly next: number; readonly keep: boolean }
+  | { readonly next: number; readonly kept: Option.Option<Uint8Array> }
   | 'end'
   | 'broken';
 
@@ -226,10 +269,13 @@ const segmentAt = (bytes: Uint8Array, view: DataView, offset: number) => {
     return 'end';
   }
   if (marker === markerByte) {
-    return { next: offset + 1, keep: false };
+    return { next: offset + 1, kept: Option.none() };
   }
   if (standsAlone(marker)) {
-    return { next: offset + markerBytes, keep: true };
+    return {
+      next: offset + markerBytes,
+      kept: Option.some(bytes.subarray(offset, offset + markerBytes)),
+    };
   }
   if (offset + markerBytes + lengthBytes > bytes.length) {
     return 'broken';
@@ -238,9 +284,10 @@ const segmentAt = (bytes: Uint8Array, view: DataView, offset: number) => {
   if (end < offset + markerBytes + lengthBytes || end > bytes.length) {
     return 'broken';
   }
+  const next = marker === startOfScan ? scanEnd(bytes, end) : end;
   return {
-    next: marker === startOfScan ? scanEnd(bytes, end) : end,
-    keep: keepsSegment(bytes, offset, marker),
+    next,
+    kept: keptPart(bytes.subarray(offset, next), marker),
   } satisfies Segment;
 };
 
@@ -267,8 +314,8 @@ export const withoutMetadata = (
       kept.push(bytes.subarray(offset, offset + markerBytes));
       return Option.some(Buffer.concat(kept));
     }
-    if (segment.keep) {
-      kept.push(bytes.subarray(offset, segment.next));
+    if (Option.isSome(segment.kept)) {
+      kept.push(segment.kept.value);
     }
     offset = segment.next;
   }

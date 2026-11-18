@@ -145,18 +145,26 @@ describe('sending the preview', () => {
     expect(await keptPreview()).toEqual(clean);
   });
 
-  it('keeps its JFIF header but not another APP0, such as Canon’s with the owner', async () => {
+  it('keeps the JFIF header without its thumbnail, Adobe’s fixed fields, and no other APP0, such as Canon’s with the owner', async () => {
     await registerPhoto(server, phone, id);
-    // The JFIF header: version 1.2, square pixels, no thumbnail.
-    const jfif = '\xff\xe0\x00\x10JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00';
+    // The JFIF header (version 1.2, square pixels) with a 1×1 thumbnail, one
+    // red RGB pixel, after it, and Adobe's segment (version 100, no flags,
+    // transform 1) with two more bytes.
+    const jfif =
+      '\xff\xe0\x00\x13JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x01\x01\xff\x00\x00';
+    const adobe = '\xff\xee\x00\x10Adobe\x00\x64\x00\x00\x00\x00\x01\xab\xcd';
     const owner = 'II\x1a\x00\x00\x00HEAPJPGMOwner: Jane Example';
     const ciff = `\xff\xe0\x00${String.fromCharCode(owner.length + 2)}${owner}`;
-    const clean = afterStart(tinyJpeg(2048, 1536), jfif);
+    // The 18-byte JFIF header, sized for no thumbnail, and Adobe's 16 bytes.
+    const cleanJfif =
+      '\xff\xe0\x00\x10JFIF\x00\x01\x02\x00\x00\x01\x00\x01\x00\x00';
+    const cleanAdobe = '\xff\xee\x00\x0eAdobe\x00\x64\x00\x00\x00\x00\x01';
+    const clean = afterStart(tinyJpeg(2048, 1536), `${cleanJfif}${cleanAdobe}`);
     const response = await putPreview(
       server,
       phone,
       id,
-      afterStart(tinyJpeg(2048, 1536), `${jfif}${ciff}`),
+      afterStart(tinyJpeg(2048, 1536), `${jfif}${ciff}${adobe}`),
     );
     expect(response.status).toBe(200);
     const photo = decodePhoto(await response.json());
