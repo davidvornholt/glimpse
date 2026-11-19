@@ -97,6 +97,11 @@
     <string name="viewer_edit_note">Edit note</string>
     <string name="viewer_note_title">Note</string>
     <string name="viewer_retry">Retry upload</string>
+    <string name="viewer_hide_controls">Hide controls</string>
+    <string name="viewer_show_controls">Show controls</string>
+    <string name="viewer_original_unavailable">The original is unavailable. A preview is available.</string>
+    <string name="viewer_save_preview">Save preview</string>
+    <string name="viewer_share_preview">Share preview</string>
     <string name="viewer_save">Save to phone</string>
     <string name="viewer_saved">Saved to Pictures/Glimpse</string>
     <string name="viewer_save_failed">Couldn’t save the photo. Free up some space and try again.</string>
@@ -154,8 +159,8 @@
     <string name="settings_photos">Photos</string>
     <string name="settings_keep_copy">Keep a copy on this phone</string>
     <string name="settings_keep_copy_body">Also save each photo to Pictures/Glimpse</string>
-    <string name="settings_retention">Kept for 30 days</string>
-    <string name="settings_retention_body">The server deletes each photo 30 days after you send it.</string>
+    <string name="settings_retention">Photo retention</string>
+    <string name="settings_retention_body">The server deletes photos automatically. You can see each photo’s expiry date in the inbox.</string>
     <string name="settings_unpair">Unpair</string>
     <string name="settings_unpair_body">Stop sending photos to %1$s</string>
     <string name="settings_unpair_title">Unpair this phone?</string>

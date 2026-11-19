@@ -23,6 +23,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.launch
 
@@ -33,6 +35,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ZoomableImage(
     onTap: () -> Unit,
+    tapLabel: String,
     onZoomedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
@@ -41,19 +44,11 @@ fun ZoomableImage(
     val tap by rememberUpdatedState(onTap)
     val zoomedChange by rememberUpdatedState(onZoomedChange)
     var size by remember { mutableStateOf(IntSize.Zero) }
+    var fitted by remember { mutableStateOf(IntSize.Zero) }
     val scale = remember { Animatable(1f) }
     val offset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
     val spring = MaterialTheme.motionScheme.defaultSpatialSpec<Float>()
     val offsetSpring = MaterialTheme.motionScheme.defaultSpatialSpec<Offset>()
-
-    fun clamp(
-        value: Offset,
-        zoom: Float,
-    ): Offset {
-        val maxX = size.width * (zoom - 1) / 2
-        val maxY = size.height * (zoom - 1) / 2
-        return Offset(value.x.coerceIn(-maxX, maxX), value.y.coerceIn(-maxY, maxY))
-    }
 
     val zoomed = scale.value > 1.01f
     LaunchedEffect(zoomed) { zoomedChange(zoomed) }
@@ -66,14 +61,19 @@ fun ZoomableImage(
             val moved = offset.value * applied + fromCenter * (1 - applied) + panChange
             scope.launch {
                 scale.snapTo(next)
-                offset.snapTo(clamp(moved, next))
+                offset.snapTo(clampPan(moved, next, size, fitted))
             }
         }
     Box(
         modifier
             .fillMaxSize()
             .onSizeChanged { size = it }
-            .pointerInput(Unit) {
+            .semantics(mergeDescendants = true) {
+                onClick(label = tapLabel) {
+                    tap()
+                    true
+                }
+            }.pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { tap() },
                     onDoubleTap = { at ->
@@ -83,7 +83,12 @@ fun ZoomableImage(
                                 scale.animateTo(1f, spring)
                             } else {
                                 val center = Offset(size.width / 2f, size.height / 2f)
-                                launch { offset.animateTo(clamp((center - at) * (DOUBLE_TAP_ZOOM - 1), DOUBLE_TAP_ZOOM), offsetSpring) }
+                                launch {
+                                    offset.animateTo(
+                                        clampPan((center - at) * (DOUBLE_TAP_ZOOM - 1), DOUBLE_TAP_ZOOM, size, fitted),
+                                        offsetSpring,
+                                    )
+                                }
                                 scale.animateTo(DOUBLE_TAP_ZOOM, spring)
                             }
                         }
@@ -93,12 +98,31 @@ fun ZoomableImage(
             .graphicsLayer {
                 scaleX = scale.value
                 scaleY = scale.value
-                translationX = offset.value.x
-                translationY = offset.value.y
+                val pan = clampPan(offset.value, scale.value, size, fitted)
+                translationX = pan.x
+                translationY = pan.y
             },
         contentAlignment = Alignment.Center,
-        content = content,
-    )
+    ) {
+        Box(Modifier.onSizeChanged { fitted = it }, contentAlignment = Alignment.Center, content = content)
+    }
+}
+
+internal fun clampPan(
+    value: Offset,
+    zoom: Float,
+    size: IntSize,
+    fitted: IntSize,
+): Offset {
+    fun clamp(
+        offset: Float,
+        image: Int,
+        viewport: Int,
+    ): Float {
+        val limit = (image * zoom - viewport) / 2f
+        return if (limit > 0f) offset.coerceIn(-limit, limit) else 0f
+    }
+    return Offset(clamp(value.x, fitted.width, size.width), clamp(value.y, fitted.height, size.height))
 }
 
 private const val MAX_ZOOM = 6f
