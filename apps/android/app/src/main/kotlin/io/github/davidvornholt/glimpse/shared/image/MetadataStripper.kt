@@ -129,7 +129,6 @@ object MetadataStripper {
         return out.toByteArray()
     }
 
-    /** The chunks of a WebP from [start] to [end] that are in [kept], each frame of an animation rebuilt the same way. */
     private fun keptRiffChunks(
         input: ByteArray,
         start: Int,

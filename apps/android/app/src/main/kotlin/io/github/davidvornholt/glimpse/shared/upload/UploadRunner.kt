@@ -98,7 +98,6 @@ class UploadRunner(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            // Without an answer the photo stays, and the step is tried again later.
             false
         }
 
