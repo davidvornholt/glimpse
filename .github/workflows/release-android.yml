@@ -11,6 +11,15 @@ on:
 
 permissions: {}
 
+# One run at a time, so two releases can't take the same number. A newer push
+# replaces a run that is still waiting, which loses nothing: the newer commit
+# contains the older one's changes. The group covers the gate, so runs wait in
+# the order of their pushes rather than of their gates, which could let an
+# older commit replace a newer one.
+concurrency:
+  group: release-android
+  cancel-in-progress: false
+
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -72,12 +81,6 @@ jobs:
     permissions:
       # Creates the release and its tag.
       contents: write
-    # One release at a time, so two runs can't take the same number. A newer
-    # push replaces a run that is still waiting, which loses nothing: the
-    # newer commit contains the older one's changes.
-    concurrency:
-      group: release-android
-      cancel-in-progress: false
     steps:
       - name: Checkout the released commit with its tags
         uses: actions/checkout@v7
