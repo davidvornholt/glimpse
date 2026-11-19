@@ -1,9 +1,13 @@
 package io.github.davidvornholt.glimpse.features.pairing
 
+import io.github.davidvornholt.glimpse.shared.api.ApiErrorTag
+import io.github.davidvornholt.glimpse.shared.api.ApiException
 import io.github.davidvornholt.glimpse.shared.api.ClaimResult
 import io.github.davidvornholt.glimpse.shared.api.Device
 import io.github.davidvornholt.glimpse.shared.api.GlimpseApi
 import io.github.davidvornholt.glimpse.shared.api.OriginalType
+import io.github.davidvornholt.glimpse.shared.api.Photo
+import io.github.davidvornholt.glimpse.shared.api.PhotoMetadata
 import io.github.davidvornholt.glimpse.shared.api.PhotoSource
 import io.github.davidvornholt.glimpse.shared.api.ServerEvent
 import io.github.davidvornholt.glimpse.shared.api.TEST_PHOTO_ID
@@ -20,7 +24,12 @@ import io.github.davidvornholt.glimpse.shared.ulid.UlidGenerator
 import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
 import io.github.davidvornholt.glimpse.shared.upload.CaptureStore
 import io.github.davidvornholt.glimpse.shared.upload.DeleteScheduler
+import io.github.davidvornholt.glimpse.shared.upload.MissingFileException
+import io.github.davidvornholt.glimpse.shared.upload.UploadFailure
+import io.github.davidvornholt.glimpse.shared.upload.UploadRunner
 import io.github.davidvornholt.glimpse.shared.upload.UploadScheduler
+import io.github.davidvornholt.glimpse.shared.upload.UploadStep
+import io.github.davidvornholt.glimpse.shared.upload.UploadTarget
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,6 +56,7 @@ class PairingBoundaryTest {
     private val server = "https://glimpse.example.com"
     private val link = PairingLink("$server/second", "code")
     private val old = Session(server, "test", "first-device", "Phone")
+    private val newDevice = "new-device"
     private val sessions = mock(SessionStore::class.java)
     private val settings = mock(SettingsStore::class.java)
     private val uploads = mock(UploadScheduler::class.java)
@@ -54,6 +64,7 @@ class PairingBoundaryTest {
     private val captures = CaptureStore(File(root, "captures"))
     private val record = CaptureRecord(TEST_PHOTO_ID, TEST_TIME, PhotoSource.Camera, 1, 1, OriginalType.Jpeg)
     private val api = mock(GlimpseApi::class.java)
+    private val remote = FakeServer(captures)
     private val revoked = mutableListOf<File>()
     private lateinit var feed: PhotoFeed
     private lateinit var library: PhotoLibrary
@@ -64,9 +75,7 @@ class PairingBoundaryTest {
         `when`(deletes.pending).thenReturn(flowOf(emptySet()))
         `when`(sessions.state).thenReturn(state)
         `when`(sessions.lastServer()).thenReturn(server)
-        `when`(api.claim("code", "Phone")).thenReturn(ClaimResult("new-test", Device("new-device", "Phone", TEST_TIME)))
-        `when`(api.photo(record.id)).thenReturn(testPhoto())
-        `when`(sessions.lastDeviceId()).thenReturn(old.deviceId)
+        `when`(api.claim("code", "Phone")).thenReturn(ClaimResult("new-test", Device(newDevice, "Phone", TEST_TIME)))
         `when`(api.events()).thenReturn(
             flow {
                 emit(ServerEvent.PhotoChanged(testPhoto()))
@@ -80,6 +89,38 @@ class PairingBoundaryTest {
                 api
             }, root, { revoked.add(it) }, backgroundScope)
         return PairingClaimer({ api }, sessions, library)
+    }
+
+    /** Keeps a capture and its image files, as the camera leaves them. */
+    private suspend fun keep(
+        capture: CaptureRecord,
+        withOriginal: Boolean = true,
+    ) {
+        captures.prepare(capture.id)
+        if (withOriginal) captures.originalFile(capture).writeText("original")
+        captures.previewFile(capture.id).writeText("preview")
+        captures.add(capture)
+    }
+
+    /** Runs every upload to its end, as the upload worker does once the phone is paired again. */
+    private suspend fun uploadAll(session: Session) {
+        val target = remote.asDevice(session.deviceId)
+        captures.records.value.keys
+            .forEach { UploadRunner(target, captures).run(it) }
+    }
+
+    /** The one capture went to the server again from scratch, under a fresh id the new device owns. */
+    private fun assertUploadedAgain(note: String? = null) {
+        val uploaded =
+            captures.records.value.values
+                .single()
+        assertNotEquals(record.id, uploaded.id)
+        assertTrue(uploaded.isDone, "$uploaded")
+        assertEquals(note, uploaded.note)
+        val stored = remote.photos.getValue(uploaded.id)
+        assertEquals(FakeServer.Stored(newDevice, uploaded.metadata.copy(note = null), note, "preview", "original"), stored)
+        // The phone deletes its original only once the server has it.
+        assertFalse(captures.originalFile(uploaded).exists())
     }
 
     @AfterTest fun cleanUp() {
@@ -99,43 +140,92 @@ class PairingBoundaryTest {
         runTest {
             val claimer = claimer()
             `when`(sessions.lastServer()).thenReturn("$server:443")
-            captures.prepare(record.id)
-            captures.add(record)
+            keep(record)
             claimer.claim(link.copy(server = server), "Phone")
-            assertEquals(record, captures.get(record.id))
-        }
-
-    @Test fun `reclaims an unfinished registration and keeps its original and note`() =
-        runTest {
-            val claimer = claimer()
-            captures.prepare(record.id)
-            captures.originalFile(record).writeText("original")
-            captures.previewFile(record.id).writeText("preview")
-            captures.add(record.copy(registered = true, note = "caption", registrations = 1))
-            val session = claimer.claim(link.copy(server = server), "Phone")
-            assertEquals(old.deviceId, captures.get(record.id)?.registrationDevice)
-            library.recoverRegistration(record.id, session)
-            val recovered =
+            val kept =
                 captures.records.value.values
                     .single()
-            assertNotEquals(record.id, recovered.id)
-            assertFalse(recovered.registered)
-            assertEquals("caption", recovered.note)
-            assertEquals("original", captures.originalFile(recovered).readText())
-            assertEquals("preview", captures.previewFile(recovered.id).readText())
-            assertEquals(recovered, CaptureStore(File(root, "captures")).get(recovered.id))
-            verify(uploads).resume(recovered.id)
+            assertEquals(record, kept.copy(id = record.id))
         }
 
-    @Test fun `a lost preview reply keeps the visible photo under its id`() =
+    @Test fun `a registration without a preview uploads again under the new device`() =
         runTest {
             val claimer = claimer()
-            captures.prepare(record.id)
-            captures.add(record.copy(registered = true, registrationDevice = old.deviceId))
-            `when`(api.photo(record.id)).thenReturn(testPhoto(readyAt = TEST_TIME))
+            remote.registerAs(old.deviceId, record)
+            keep(record.copy(registered = true, note = "caption", registrations = 1))
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertUploadedAgain(note = "caption")
+        }
+
+    @Test fun `a photo whose original the old device never sent uploads again under the new device`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record)
+            remote.photos[record.id] = remote.photos.getValue(record.id).copy(preview = "preview")
+            keep(record.copy(registered = true, previewSent = true, registrations = 1))
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertUploadedAgain()
+        }
+
+    @Test fun `a registration whose reply was lost uploads again under the new device`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record)
+            keep(record)
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertUploadedAgain()
+        }
+
+    @Test fun `a registration that conflicted uploads again under the new device`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record)
+            keep(record.copy(failure = UploadFailure.Conflict))
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertUploadedAgain()
+        }
+
+    @Test fun `a fully uploaded photo keeps its id and sends only its new note`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record.copy(note = "old caption"))
+            remote.photos[record.id] = remote.photos.getValue(record.id).copy(preview = "preview", original = "original")
+            val uploaded =
+                record.copy(
+                    note = "new caption",
+                    serverNote = "old caption",
+                    registered = true,
+                    previewSent = true,
+                    originalSent = true,
+                    registrations = 1,
+                )
+            keep(uploaded, withOriginal = false)
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertEquals(listOf(UploadStep.Note to record.id), remote.requests)
+            assertEquals("new caption", remote.photos.getValue(record.id).note)
+            assertEquals(
+                uploaded.copy(serverNote = "new caption"),
+                captures.records.value.values
+                    .single(),
+            )
+        }
+
+    @Test fun `a photo waiting for its delete keeps its id, so the delete still finds it`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record)
+            val waiting = record.copy(registered = true, registrations = 1)
+            keep(waiting)
+            assertEquals(server, library.hide(record.id))
             val session = claimer.claim(link.copy(server = server), "Phone")
-            assertFalse(library.recoverRegistration(record.id, session))
-            assertTrue(captures.get(record.id)!!.previewSent)
+            `when`(sessions.currentSession()).thenReturn(session)
+            val kept = captures.get(record.id)
+            assertEquals("original", kept?.let { captures.originalFile(it).readText() })
+            uploadAll(session)
+            library.delete(record.id, server)
+            assertEquals(emptyMap(), captures.records.value)
+            assertEquals(setOf(record.id), remote.photos.keys)
+            assertEquals(waiting, kept)
         }
 
     @Test fun `switching clears the next photo note`() =
@@ -166,5 +256,84 @@ class PairingBoundaryTest {
             library.clear()
             assertEquals(setOf("shared.jpg", "download.jpg"), revoked.map { it.name }.toSet())
             assertFalse(shared.exists())
+        }
+}
+
+/** Keeps photos the way the server does: only the device that registered a photo may send its images. */
+private class FakeServer(
+    private val captures: CaptureStore,
+) {
+    data class Stored(
+        val device: String,
+        val metadata: PhotoMetadata,
+        val note: String?,
+        val preview: String? = null,
+        val original: String? = null,
+    )
+
+    val photos = mutableMapOf<String, Stored>()
+    val requests = mutableListOf<Pair<UploadStep, String>>()
+
+    fun registerAs(
+        device: String,
+        record: CaptureRecord,
+    ) {
+        photos[record.id] = Stored(device, record.metadata.copy(note = null), record.note)
+    }
+
+    private fun stored(id: String) = photos[id] ?: throw ApiException(404, ApiErrorTag.NotFound, "Photo $id doesn't exist.")
+
+    fun photo(id: String): Photo {
+        val photo = stored(id)
+        return testPhoto(id = id, note = photo.note, readyAt = photo.preview?.let { TEST_TIME }).copy(hasOriginal = photo.original != null)
+    }
+
+    fun asDevice(device: String) =
+        object : UploadTarget {
+            override suspend fun register(record: CaptureRecord): Photo {
+                requests += UploadStep.Register to record.id
+                val existing = photos[record.id]
+                if (existing == null) {
+                    registerAs(device, record)
+                } else if (existing.device != device || existing.metadata != record.metadata.copy(note = null)) {
+                    throw ApiException(409, ApiErrorTag.Conflict, "Photo ${record.id} already exists with other details.")
+                }
+                return photo(record.id)
+            }
+
+            // Like the server, anyone paired may change a note.
+            override suspend fun setNote(record: CaptureRecord): Photo {
+                requests += UploadStep.Note to record.id
+                photos[record.id] = stored(record.id).copy(note = record.note)
+                return photo(record.id)
+            }
+
+            override suspend fun putPreview(
+                record: CaptureRecord,
+                onProgress: (Long, Long) -> Unit,
+            ): Photo = send(UploadStep.Preview, record) { it.copy(preview = bytes(captures.previewFile(record.id))) }
+
+            override suspend fun putOriginal(
+                record: CaptureRecord,
+                onProgress: (Long, Long) -> Unit,
+            ): Photo = send(UploadStep.Original, record) { it.copy(original = bytes(captures.originalFile(record))) }
+
+            override suspend fun exists(record: CaptureRecord): Boolean = record.id in photos
+
+            private fun send(
+                step: UploadStep,
+                record: CaptureRecord,
+                change: (Stored) -> Stored,
+            ): Photo {
+                requests += step to record.id
+                val existing = stored(record.id)
+                if (existing.device != device) {
+                    throw ApiException(403, ApiErrorTag.Forbidden, "Photo ${record.id} was registered by another phone.")
+                }
+                photos[record.id] = change(existing)
+                return photo(record.id)
+            }
+
+            private fun bytes(file: File) = file.takeIf { it.isFile }?.readText() ?: throw MissingFileException(file)
         }
 }

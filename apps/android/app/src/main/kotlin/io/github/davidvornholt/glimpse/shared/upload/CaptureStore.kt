@@ -127,7 +127,10 @@ class CaptureStore(
             next
         }
 
-    /** Moves both image files together. A worker for the old id can no longer edit the record. */
+    /**
+     * Moves a photo and both its image files to [newId], so its upload starts again from scratch.
+     * A worker for the old id can no longer edit the record.
+     */
     suspend fun renewRegistration(
         id: String,
         newId: String,
@@ -135,7 +138,6 @@ class CaptureStore(
         mutex.withLock {
             loadLocked()
             val record = all.value[id] ?: return@withLock null
-            if (record.previewSent) return@withLock record
             val fresh = record.freshRegistration(newId)
             withContext(Dispatchers.IO) {
                 Files.move(directory(id).toPath(), directory(newId).toPath(), StandardCopyOption.ATOMIC_MOVE)
@@ -145,14 +147,7 @@ class CaptureStore(
         }
 
     private fun CaptureRecord.freshRegistration(newId: String) =
-        copy(
-            id = newId,
-            registered = false,
-            registrationDevice = null,
-            registrations = 0,
-            serverNote = null,
-            failure = null,
-        )
+        CaptureRecord(newId, takenAt, source, width, height, originalType, note, batchId)
 
     suspend fun remove(id: String) =
         mutex.withLock {

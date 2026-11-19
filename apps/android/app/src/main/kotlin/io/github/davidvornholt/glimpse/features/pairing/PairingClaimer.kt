@@ -54,14 +54,15 @@ class PairingClaimer(
         val previous = sessions.lastServer()
         if (previous != null) {
             if (PairingLink.sameServer(previous, link.server)) {
-                library.prepareForNewDevice(sessions.lastDeviceId())
+                // Before the new session is saved, so if the process dies here the next pairing renews the photos again.
+                library.prepareForNewDevice()
             } else {
                 library.clear()
             }
         }
         val session = Session(link.server, result.token, result.device.id, result.device.name)
         sessions.save(session)
-        library.resumeUploads(session.deviceId)
+        library.resumeUploads()
         return session
     }
 

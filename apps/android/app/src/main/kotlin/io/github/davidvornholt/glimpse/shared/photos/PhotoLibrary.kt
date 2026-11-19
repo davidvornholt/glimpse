@@ -17,6 +17,7 @@ import io.github.davidvornholt.glimpse.shared.ulid.UlidGenerator
 import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
 import io.github.davidvornholt.glimpse.shared.upload.CaptureStore
 import io.github.davidvornholt.glimpse.shared.upload.DeleteScheduler
+import io.github.davidvornholt.glimpse.shared.upload.UploadFailure
 import io.github.davidvornholt.glimpse.shared.upload.UploadScheduler
 import io.github.davidvornholt.glimpse.shared.upload.deletionSession
 import kotlinx.coroutines.CoroutineScope
@@ -87,7 +88,7 @@ class PhotoLibrary(
             captures.prune()
             // An upload whose work was lost, for example because the process died
             // before it was queued, carries on.
-            sessions.currentSession()?.let { resumeUploads(it.deviceId) }
+            if (sessions.currentSession() != null) resumeUploads()
         }
     }
 
@@ -376,46 +377,30 @@ class PhotoLibrary(
             .count { !it.originalSent && !it.deletedOnServer }
     }
 
-    suspend fun prepareForNewDevice(previousDevice: String?) {
+    /**
+     * Readies the photos for the new device that pairing again with the same server creates.
+     * The server lets only the device that registered a photo send its images, so every photo
+     * with an image still to send starts over under a fresh id; one whose preview the old device
+     * sent shows twice until that copy expires. A photo with all its images on the server keeps
+     * its id, because any device may change its note, and so does one hidden for a delete, so
+     * the delete still finds it.
+     */
+    suspend fun prepareForNewDevice() {
         uploads.cancelAll()
         captures.load()
-        // Older records predate registrationDevice. The stored device id survives removal.
-        captures.records.value.values.filter { it.registered && !it.previewSent && it.registrationDevice == null }.forEach { record ->
-            captures.update(record.id) { it.copy(registrationDevice = previousDevice.orEmpty()) }
-        }
-    }
-
-    /** A lost preview reply is possible. Check the server before creating another visible photo. */
-    suspend fun recoverRegistration(
-        id: String,
-        session: Session,
-    ): Boolean {
-        val record = captures.get(id) ?: return false
-        if (!record.needsNewRegistration(session.deviceId)) return false
-        val photo =
-            try {
-                apiFor(session).photo(id)
-            } catch (error: ApiException) {
-                if (error.tag != ApiErrorTag.NotFound) throw error
-                null
-            }
-        if (photo?.readyAt != null) {
-            captures.update(id) {
-                it.copy(registered = true, previewSent = true, originalSent = photo.hasOriginal, serverNote = photo.note, failure = null)
-            }
-            return false
-        }
-        val fresh = captures.renewRegistration(id, ids.next()) ?: return true
-        if (fresh.id == id) return false
-        uploads.resume(fresh.id)
-        return true
+        val waitingForDelete = hidden.value
+        captures.records.value.values
+            .filter { record ->
+                val imagesLeft = !record.registered || !record.previewSent || (!record.originalSent && !record.originalSkipped)
+                imagesLeft && !record.deletedOnServer && record.failure != UploadFailure.Rejected && record.id !in waitingForDelete
+            }.forEach { captures.renewRegistration(it.id, ids.next()) }
     }
 
     /** Queues every unfinished upload that has no work, such as those that waited while the phone was unpaired. */
-    suspend fun resumeUploads(deviceId: String) {
+    suspend fun resumeUploads() {
         captures.load()
         captures.records.value.values
-            .filter { (!it.isDone && it.failure == null) || it.needsNewRegistration(deviceId) }
+            .filter { !it.isDone && it.failure == null }
             .forEach { uploads.resume(it.id) }
     }
 }

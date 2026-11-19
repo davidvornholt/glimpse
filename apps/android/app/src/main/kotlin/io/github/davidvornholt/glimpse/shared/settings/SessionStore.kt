@@ -76,8 +76,6 @@ class SessionStore(
     /** The server this phone was last paired with, even after it was removed. */
     suspend fun lastServer(): String? = store.data.first()[SERVER]
 
-    suspend fun lastDeviceId(): String? = store.data.first()[DEVICE_ID]
-
     suspend fun save(session: Session) {
         val sealedToken = cipher.encrypt(session.token)
         store.edit {

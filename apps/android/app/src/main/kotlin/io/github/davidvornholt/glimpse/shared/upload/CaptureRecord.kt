@@ -21,8 +21,6 @@ data class CaptureRecord(
     val note: String? = null,
     val batchId: String? = null,
     val registered: Boolean = false,
-    /** Set before sending registration, since its reply can be lost. */
-    val registrationDevice: String? = null,
     /** The note the server has, as its last answer said. */
     val serverNote: String? = null,
     val previewSent: Boolean = false,
@@ -35,8 +33,6 @@ data class CaptureRecord(
     val deletedOnServer: Boolean = false,
     val failure: UploadFailure? = null,
 ) {
-    fun needsNewRegistration(deviceId: String) = !previewSent && registrationDevice != null && registrationDevice != deviceId
-
     val metadata: PhotoMetadata
         get() = PhotoMetadata(takenAt, source, width, height, originalType, note, batchId)
 
