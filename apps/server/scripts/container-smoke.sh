@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs the server image as production does (read-only, no capabilities, an
-# arbitrary user, a data directory it can write) and checks that it answers,
+# arbitrary user, a private data directory it owns) and checks that it answers,
 # pairs a phone, keeps tokens out of its log, and exits 0 within seconds of a
 # stop signal while the phone holds its event stream open. Usage:
 # container-smoke.sh [image]; DOCKER=podman runs it with Podman.
@@ -35,7 +35,7 @@ trap cleanup EXIT
 "$docker" run --detach --name "$name" \
   --read-only \
   --tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m \
-  --tmpfs=/data:rw,noexec,nosuid,nodev,size=64m,mode=1777 \
+  --tmpfs=/data:rw,noexec,nosuid,nodev,size=64m,mode=0700,uid=2025,gid=2025 \
   --cap-drop=ALL \
   --security-opt=no-new-privileges \
   --user=2025:2025 \
