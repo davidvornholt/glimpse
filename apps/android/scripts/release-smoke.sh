@@ -132,11 +132,11 @@ centre() {
 }
 
 alive() {
-  [ -n "$(adb shell pidof "$package" | tr -d '\r')" ] || fail "the app isn't running after $1"
   if adb logcat -b crash -d | grep -Fq "$package"; then
     adb logcat -b crash -d >"$out/crash.txt"
-    fail "the app crashed after $1: $(grep -m1 -E 'Exception|Error' "$out/crash.txt")"
+    fail "the app crashed $1: $(grep -m1 -E 'Exception|Error' "$out/crash.txt")"
   fi
+  [ -n "$(adb shell pidof "$package" | tr -d '\r')" ] || fail "the app isn't running $1"
 }
 
 # Waits up to $2 seconds (default 30) for an element labelled $1 to show.
@@ -147,6 +147,7 @@ wait_for() {
     sleep 1
   done
   cp "$screen" "$out/ui.xml" 2>/dev/null || true
+  alive "while waiting for \"$1\""
   fail "\"$1\" didn't show within $seconds s"
 }
 
@@ -157,11 +158,11 @@ tap() {
 }
 
 adb shell am start -W -n "$package/.MainActivity" >/dev/null
-tap 'Scan code'
+tap 'Scan code' 60
 # The barcode scanner starts with the camera preview behind this hint.
 wait_for 'Point the camera at the code glimpse pair shows'
 sleep 5
-alive 'opening the pairing code scanner'
+alive 'after opening the pairing code scanner'
 adb shell input keyevent KEYCODE_BACK
 
 link=$(curl -fsS -X POST -H "Authorization: Bearer $owner" "$base/v1/pairings" | jq -er .link)
@@ -172,7 +173,7 @@ for _ in $(seq 30); do
   sleep 1
 done
 [ "$(owner_get /v1/devices | jq length)" = 1 ] || fail "the phone didn't pair"
-alive 'pairing'
+alive 'after pairing'
 
 tap 'Take photo'
 for _ in $(seq 90); do
@@ -181,13 +182,13 @@ for _ in $(seq 90); do
 done
 owner_get /v1/photos | jq -e '[.photos[] | select(.hasOriginal)] | length == 1' >/dev/null ||
   fail "the photo didn't reach the server within 90 s"
-alive 'taking a photo'
+alive 'after taking a photo'
 
 tap 'Scan'
 tap 'Scan document'
 # The scanner is Google Play services' own screen, or the app says it isn't
 # installed yet; either way the app has to keep running.
 sleep 10
-alive 'opening the document scanner'
+alive 'after opening the document scanner'
 
 echo 'release smoke test passed'
