@@ -135,8 +135,8 @@
     <string name="unpair_clear_failed">Could not finish clearing this phone. Try unpairing again.</string>
     <string name="pairing_replace">Pairing here will remove this phone’s copies of photos from %1$s.</string>
     <plurals name="pairing_unsent">
-        <item quantity="one">%d original has not finished uploading and will be lost.</item>
-        <item quantity="other">%d originals have not finished uploading and will be lost.</item>
+        <item quantity="one">%d original hasn’t finished uploading, and Glimpse will delete its copy.</item>
+        <item quantity="other">%d originals haven’t finished uploading, and Glimpse will delete its copies.</item>
     </plurals>
     <string name="pairing_pair">Pair</string>
     <string name="pairing_claiming">Pairing with %1$s…</string>

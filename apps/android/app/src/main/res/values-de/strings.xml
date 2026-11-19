@@ -134,8 +134,8 @@
     <string name="unpair_clear_failed">Die Daten auf diesem Smartphone konnten nicht vollständig gelöscht werden. Versuche erneut, die Kopplung aufzuheben.</string>
     <string name="pairing_replace">Beim Koppeln werden die Fotos von %1$s auf diesem Smartphone gelöscht.</string>
     <plurals name="pairing_unsent">
-        <item quantity="one">%d Original ist noch nicht vollständig hochgeladen und geht verloren.</item>
-        <item quantity="other">%d Originale sind noch nicht vollständig hochgeladen und gehen verloren.</item>
+        <item quantity="one">%d Original ist noch nicht vollständig hochgeladen, und Glimpse löscht seine Kopie.</item>
+        <item quantity="other">%d Originale sind noch nicht vollständig hochgeladen, und Glimpse löscht seine Kopien.</item>
     </plurals>
     <string name="pairing_pair">Koppeln</string>
     <string name="pairing_claiming">Wird mit %1$s gekoppelt …</string>

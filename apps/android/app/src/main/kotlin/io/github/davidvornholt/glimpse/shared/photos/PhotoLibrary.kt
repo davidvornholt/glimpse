@@ -350,7 +350,7 @@ class PhotoLibrary(
         send(copy)
     }
 
-    /** Forgets every photo on the phone, for unpairing. */
+    /** Clears Glimpse's private photo state on unpairing or switching servers. */
     suspend fun clear() {
         uploads.cancelAll()
         // Under the export lock, so a save or share that is reading an original finishes first.

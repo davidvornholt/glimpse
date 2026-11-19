@@ -79,7 +79,7 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 import java.time.LocalDate
 
-/** What the activity hands the screens: links and shortcuts that opened it. */
+/** What the activity hands the screens: a link it couldn't read and the shortcuts that opened it. */
 class LaunchRequests(
     val invalidLink: Boolean,
     val scan: Boolean,
