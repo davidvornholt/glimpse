@@ -299,65 +299,56 @@ class PhotoLibrary(
     }
 
     /**
-     * The best copy of a photo as a file: the phone's original while it has
-     * one, otherwise the server's original or preview, downloaded to the cache.
+     * Prefers an original on the phone or server and identifies a preview so the
+     * viewer can ask before saving or sharing the lower-resolution copy.
      */
-    private suspend fun fileFor(item: GalleryItem): Pair<File, OriginalType> {
-        val record = captures.get(item.id)
-        if (record != null) {
-            val original = captures.originalFile(record)
-            if (original.isFile) return original to record.originalType
-        }
-        val session = sessions.currentSession() ?: throw IOException("Not paired")
-        val api = apiFor(session)
-        val directory = sharedDir.apply { mkdirs() }
-        val remote = feed.photos.value[item.id]
-        return if (remote?.hasOriginal != false) {
-            val target = File(directory, "glimpse-${item.id}.${item.originalType.extension}")
-            try {
-                api.download(api.originalUrl(item.id), target)
-                target to item.originalType
-            } catch (error: ApiException) {
-                if (error.tag != ApiErrorTag.NotFound) throw error
-                downloadPreview(api, item.id, directory)
+    internal suspend fun fileFor(item: GalleryItem): PhotoExport =
+        exports.withLock {
+            val record = captures.get(item.id)
+            if (record != null) {
+                val original = captures.originalFile(record)
+                if (original.isFile) return@withLock PhotoExport(original, record.originalType)
             }
-        } else {
-            downloadPreview(api, item.id, directory)
-        }
-    }
+            val api = sessions.currentSession()?.let(apiFor)
+            val directory = sharedDir.apply { mkdirs() }
 
-    private suspend fun downloadPreview(
-        api: GlimpseApi,
-        id: String,
-        directory: File,
-    ): Pair<File, OriginalType> {
-        val local = captures.previewFile(id)
-        if (local.isFile) return local to OriginalType.Jpeg
-        val target = File(directory, "glimpse-$id.jpg")
-        api.download(api.previewUrl(id), target)
-        return target to OriginalType.Jpeg
-    }
+            suspend fun downloadOriginal(): PhotoExport {
+                val server = api ?: throw IOException("Not paired")
+                val target = File(directory, "glimpse-${item.id}.${item.originalType.extension}")
+                server.download(server.originalUrl(item.id), target)
+                return PhotoExport(target, item.originalType)
+            }
 
-    suspend fun shareFile(
-        item: GalleryItem,
-        send: (File, OriginalType) -> Unit,
-    ) = exports.withLock {
-        val (file, type) = fileFor(item)
-        val copy =
-            withContext(Dispatchers.IO) {
-                sharedDir.mkdirs()
-                val target = File(sharedDir, "glimpse-${item.id}.${type.extension}")
-                if (file != target) file.copyTo(target, overwrite = true)
+            val hasOriginal = api != null && feed.photos.value[item.id]?.hasOriginal != false
+            resolveExport(captures.previewFile(item.id), if (hasOriginal) ::downloadOriginal else null) {
+                val server = api ?: throw IOException("Not paired")
+                val target = File(directory, "glimpse-${item.id}-preview.jpg")
+                server.download(server.previewUrl(item.id), target)
                 target
             }
-        send(copy, type)
+        }
+
+    internal suspend fun saveToGallery(
+        id: String,
+        photo: PhotoExport,
+    ) = exports.withLock {
+        gallery.save(photo.file, photo.type.mimeType, photo.displayName(id))
     }
 
-    suspend fun saveToGallery(item: GalleryItem) =
-        exports.withLock {
-            val (file, type) = fileFor(item)
-            gallery.save(file, type.mimeType, "glimpse-${item.id}.${type.extension}")
-        }
+    /** Copies into the folder the file provider shares, so only that copy leaves the app. */
+    internal suspend fun shareFile(
+        id: String,
+        photo: PhotoExport,
+        send: (File) -> Unit,
+    ) = exports.withLock {
+        val copy =
+            withContext(Dispatchers.IO) {
+                val target = File(sharedDir.apply { mkdirs() }, photo.displayName(id))
+                if (photo.file.canonicalPath != target.canonicalPath) photo.file.copyTo(target, overwrite = true)
+                target
+            }
+        send(copy)
+    }
 
     /** Forgets every photo on the phone, for unpairing. */
     suspend fun clear() {

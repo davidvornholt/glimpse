@@ -96,6 +96,11 @@
     <string name="viewer_edit_note">Notiz bearbeiten</string>
     <string name="viewer_note_title">Notiz</string>
     <string name="viewer_retry">Upload wiederholen</string>
+    <string name="viewer_hide_controls">Bedienelemente ausblenden</string>
+    <string name="viewer_show_controls">Bedienelemente einblenden</string>
+    <string name="viewer_original_unavailable">Das Original ist nicht verfügbar, die Vorschau schon.</string>
+    <string name="viewer_save_preview">Vorschau speichern</string>
+    <string name="viewer_share_preview">Vorschau teilen</string>
     <string name="viewer_save">Auf dem Smartphone speichern</string>
     <string name="viewer_saved">In Pictures/Glimpse gespeichert</string>
     <string name="viewer_save_failed">Das Foto ließ sich nicht speichern. Gib etwas Speicherplatz frei und versuch es noch einmal.</string>
@@ -158,8 +163,8 @@
     <string name="settings_photos">Fotos</string>
     <string name="settings_keep_copy">Kopie auf dem Smartphone behalten</string>
     <string name="settings_keep_copy_body">Jedes Foto zusätzlich in Pictures/Glimpse speichern</string>
-    <string name="settings_retention">30 Tage aufbewahrt</string>
-    <string name="settings_retention_body">Der Server löscht jedes Foto 30 Tage, nachdem du es gesendet hast.</string>
+    <string name="settings_retention">Zeitlich begrenzt aufbewahrt</string>
+    <string name="settings_retention_body">Der Server löscht jedes Foto nach einiger Zeit. Unter „Gesendet“ steht bei jedem Foto, wie lange es bleibt.</string>
     <string name="settings_unpair">Kopplung aufheben</string>
     <string name="settings_unpair_body">Keine Fotos mehr an %1$s senden</string>
     <string name="settings_unpair_title">Kopplung aufheben?</string>

@@ -204,6 +204,7 @@ private fun PairedContent(
     val hiddenKey = viewerId?.takeIf { viewerOpen }?.let { sharedPhotoKey(viewerOrigin, it) }
     val viewerShown = updateTransition(viewerOpen && viewerId != null, label = "viewer")
     val viewerSettled = viewerShown.currentState && viewerShown.targetState
+    val coveredPhotoId = viewerId.takeIf { viewerSettled }
     val today = LocalDate.now()
     val todays = items.filter { it.sentAt.localDate() == today }
     val open: (String, GalleryItem) -> Unit = { origin, item ->
@@ -254,6 +255,7 @@ private fun PairedContent(
                             offline = offline,
                             expanded = sheetExpanded,
                             expandedFraction = { expandedFraction },
+                            viewerPhotoId = coveredPhotoId.takeIf { viewerOrigin == INBOX },
                             hiddenKey = hiddenKey,
                             onToggle = { scope.launch { if (sheetExpanded) sheet.partialExpand() else sheet.expand() } },
                             onOpen = { open(INBOX, it) },
@@ -273,6 +275,7 @@ private fun PairedContent(
                             scanRequested = requests.scan,
                             onScanRequestHandled = onScanHandled,
                             hiddenSharedKey = hiddenKey,
+                            viewerPhotoId = coveredPhotoId.takeIf { viewerOrigin == FILMSTRIP },
                             onOpenPhoto = open,
                             onOpenInbox = { scope.launch { sheet.expand() } },
                             onOpenSettings = { settingsOpen = true },

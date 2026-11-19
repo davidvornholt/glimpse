@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudOff
@@ -31,6 +32,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +58,7 @@ import io.github.davidvornholt.glimpse.shared.ui.dayLabel
 import io.github.davidvornholt.glimpse.shared.ui.formatShortDate
 import io.github.davidvornholt.glimpse.shared.ui.formatTime
 import io.github.davidvornholt.glimpse.shared.ui.localDate
+import io.github.davidvornholt.glimpse.shared.ui.scrollToPhoto
 import io.github.davidvornholt.glimpse.shared.ui.sharedPhotoKey
 import io.github.davidvornholt.glimpse.shared.ui.uploadStatus
 import java.time.LocalDate
@@ -67,7 +70,7 @@ const val INBOX = "inbox"
 val INBOX_PEEK_HEIGHT = 64.dp
 
 /**
- * Everything sent in the last 30 days, newest first and grouped by day,
+ * Photos still in the inbox, newest first and grouped by day,
  * with each photo's note, whether an agent has seen it and when it goes.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -77,6 +80,7 @@ fun InboxSheet(
     offline: Boolean,
     expanded: Boolean,
     expandedFraction: () -> Float,
+    viewerPhotoId: String?,
     hiddenKey: String?,
     onToggle: () -> Unit,
     onOpen: (GalleryItem) -> Unit,
@@ -93,7 +97,7 @@ fun InboxSheet(
                 .graphicsLayer { alpha = (expandedFraction() * BODY_FADE_SPEED).coerceAtMost(1f) }
                 .then(if (expanded) Modifier else Modifier.clearAndSetSemantics {}),
         ) {
-            InboxBody(days, offline, hiddenKey, onOpen)
+            InboxBody(days, offline, viewerPhotoId, hiddenKey, onOpen)
         }
         Box(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
     }
@@ -104,6 +108,7 @@ fun InboxSheet(
 private fun ColumnScope.InboxBody(
     days: List<Pair<LocalDate, List<GalleryItem>>>,
     offline: Boolean,
+    viewerPhotoId: String?,
     hiddenKey: String?,
     onOpen: (GalleryItem) -> Unit,
 ) {
@@ -111,12 +116,20 @@ private fun ColumnScope.InboxBody(
     if (days.isEmpty()) {
         EmptyInbox(Modifier.weight(1f))
     } else {
+        val state = rememberLazyListState()
+        LaunchedEffect(viewerPhotoId, days) {
+            if (viewerPhotoId != null) {
+                val header = state.layoutInfo.visibleItemsInfo.firstOrNull { it.contentType == DAY_HEADER }
+                state.scrollToPhoto(inboxPhotoIndex(days, viewerPhotoId), header?.size ?: 0)
+            }
+        }
         LazyColumn(
+            state = state,
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(bottom = 16.dp),
         ) {
             days.forEach { (day, photos) ->
-                stickyHeader(key = "day-$day") {
+                stickyHeader(key = "day-$day", contentType = DAY_HEADER) {
                     Text(
                         dayLabel(day),
                         style = MaterialTheme.typography.titleSmall,
@@ -135,6 +148,19 @@ private fun ColumnScope.InboxBody(
             }
         }
     }
+}
+
+internal fun inboxPhotoIndex(
+    days: List<Pair<LocalDate, List<GalleryItem>>>,
+    id: String,
+): Int {
+    var header = 0
+    for ((_, photos) in days) {
+        val row = photos.indexOfFirst { it.id == id }
+        if (row >= 0) return header + 1 + row
+        header += photos.size + 1
+    }
+    return -1
 }
 
 @Composable
@@ -285,5 +311,6 @@ private fun EmptyInbox(modifier: Modifier = Modifier) {
     }
 }
 
+private const val DAY_HEADER = "day header"
 private const val HANDLE_ALPHA = 0.4f
 private const val BODY_FADE_SPEED = 3f
