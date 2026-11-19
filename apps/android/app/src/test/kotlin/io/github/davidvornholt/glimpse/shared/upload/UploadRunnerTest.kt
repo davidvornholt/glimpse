@@ -35,6 +35,9 @@ class UploadRunnerTest {
     private class FakeServer : UploadTarget {
         val calls = mutableListOf<UploadStep>()
         val failures = mutableMapOf<UploadStep, ArrayDeque<Exception>>()
+
+        /** What `GET /v1/photos/{id}` says: whether the photo exists, or null for no answer. */
+        var exists: Boolean? = true
         private var note: String? = null
 
         fun failNext(
@@ -77,6 +80,8 @@ class UploadRunnerTest {
             record: CaptureRecord,
             onProgress: (sent: Long, total: Long) -> Unit,
         ): Photo = answer(UploadStep.Original, record)
+
+        override suspend fun exists(record: CaptureRecord): Boolean = exists ?: throw IOException("Connection reset")
     }
 
     private fun record(note: String? = null) = CaptureRecord(id, TEST_TIME, PhotoSource.Camera, 4032, 3024, OriginalType.Jpeg, note = note)
@@ -150,11 +155,31 @@ class UploadRunnerTest {
             val server = FakeServer()
             val records = MemoryRecords(record())
             server.failNext(UploadStep.Original, ApiException(404, ApiErrorTag.NotFound, "No such photo"))
+            server.exists = false
 
             assertEquals(UploadOutcome.Done, UploadRunner(server, records).run(id))
 
             assertEquals(listOf(UploadStep.Register, UploadStep.Preview, UploadStep.Original), server.calls)
             assertTrue(records.records.getValue(id).deletedOnServer)
+        }
+
+    // A server that couldn't store the original answers 404 too, and the phone holds the only copy.
+    @Test
+    fun `keeps a photo the server still has when it turns down the original`() =
+        runTest {
+            val server = FakeServer()
+            val records = MemoryRecords(record())
+            server.failNext(UploadStep.Original, ApiException(404, ApiErrorTag.NotFound, "No such photo"))
+            server.failNext(UploadStep.Original, ApiException(404, ApiErrorTag.NotFound, "No such photo"))
+
+            for (answer in listOf(true, null)) {
+                server.exists = answer
+                assertEquals(UploadOutcome.RetryLater, UploadRunner(server, records).run(id))
+                assertEquals(false, records.records.getValue(id).deletedOnServer)
+            }
+
+            assertEquals(UploadOutcome.Done, UploadRunner(server, records).run(id))
+            assertEquals(true, records.records.getValue(id).originalSent)
         }
 
     @Test

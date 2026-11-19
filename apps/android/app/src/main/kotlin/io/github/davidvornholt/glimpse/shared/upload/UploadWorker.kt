@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import io.github.davidvornholt.glimpse.GlimpseApp
+import io.github.davidvornholt.glimpse.shared.api.ApiErrorTag
+import io.github.davidvornholt.glimpse.shared.api.ApiException
 import io.github.davidvornholt.glimpse.shared.api.GlimpseApi
 import io.github.davidvornholt.glimpse.shared.api.Photo
 import java.io.File
@@ -69,6 +71,14 @@ class UploadWorker(
             api
                 .putOriginal(record.id, existing(store.originalFile(record)), record.originalType, onProgress)
                 .also(answered)
+
+        override suspend fun exists(record: CaptureRecord): Boolean =
+            try {
+                api.photo(record.id)
+                true
+            } catch (error: ApiException) {
+                if (error.tag == ApiErrorTag.NotFound) false else throw error
+            }
 
         private fun existing(file: File) = file.takeIf { it.isFile } ?: throw MissingFileException(file)
     }

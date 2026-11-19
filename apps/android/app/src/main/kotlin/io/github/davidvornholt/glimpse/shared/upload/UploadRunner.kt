@@ -19,6 +19,9 @@ interface UploadTarget {
         record: CaptureRecord,
         onProgress: (sent: Long, total: Long) -> Unit,
     ): Photo
+
+    /** Whether the server still has the photo; throws when it can't say. */
+    suspend fun exists(record: CaptureRecord): Boolean
 }
 
 /** Where the runner keeps records. [update] applies a change to the newest copy. */
@@ -69,6 +72,12 @@ class UploadRunner(
                             return UploadOutcome.RetryLater
                         }
 
+                        UploadPlan.Decision.ConfirmDeleted -> {
+                            if (!confirmedGone(record)) return UploadOutcome.RetryLater
+                            records.update(id) { it.copy(deletedOnServer = true) } ?: return UploadOutcome.Gone
+                            continue
+                        }
+
                         UploadPlan.Decision.Unpaired -> {
                             return UploadOutcome.Unpaired
                         }
@@ -82,6 +91,16 @@ class UploadRunner(
             records.update(id) { UploadPlan.succeeded(it, step, photo) } ?: return UploadOutcome.Gone
         }
     }
+
+    private suspend fun confirmedGone(record: CaptureRecord): Boolean =
+        try {
+            !target.exists(record)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Without an answer the photo stays, and the step is tried again later.
+            false
+        }
 
     private suspend fun perform(
         record: CaptureRecord,

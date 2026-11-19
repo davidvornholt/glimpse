@@ -93,17 +93,14 @@ class UploadPlanTest {
     }
 
     @Test
-    fun `leaves a photo deleted on the server deleted`() {
+    fun `asks whether a photo an agent could see is really gone`() {
         val ready = fresh.copy(registered = true, registrations = 1, previewSent = true)
 
         for ((step, record) in listOf(UploadStep.Original to ready, UploadStep.Note to ready.copy(note = "Later"))) {
-            val decision = assertIs<UploadPlan.Decision.Update>(failed(step, api(404, ApiErrorTag.NotFound), record))
-            val deleted = decision.change(record)
-
-            assertEquals(true, deleted.deletedOnServer)
-            assertNull(UploadPlan.nextStep(deleted))
-            assertEquals(true, deleted.isDone)
+            assertEquals(UploadPlan.Decision.ConfirmDeleted, failed(step, api(404, ApiErrorTag.NotFound), record))
         }
+        assertNull(UploadPlan.nextStep(ready.copy(deletedOnServer = true)))
+        assertEquals(true, ready.copy(deletedOnServer = true).isDone)
     }
 
     @Test

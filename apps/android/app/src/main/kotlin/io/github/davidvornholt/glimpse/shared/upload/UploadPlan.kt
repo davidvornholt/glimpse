@@ -66,6 +66,13 @@ object UploadPlan {
         /** Try the step again later, when the network or the server may be back. */
         data object RetryLater : Decision
 
+        /**
+         * The server answered that the photo is gone after an agent could see it.
+         * Ask whether it really is, because a server that failed to store the
+         * original answers the same way, and a deleted photo leaves the phone.
+         */
+        data object ConfirmDeleted : Decision
+
         /** The server no longer knows this phone; nothing uploads until it pairs again. */
         data object Unpaired : Decision
 
@@ -101,10 +108,10 @@ object UploadPlan {
 
             ApiErrorTag.NotFound -> {
                 when {
-                    // An agent could see the photo, so someone deleted it on purpose,
-                    // perhaps with `glimpse delete`, and it mustn't come back.
+                    // An agent could see the photo, so if it's gone someone deleted it on
+                    // purpose, perhaps with `glimpse delete`, and it mustn't come back.
                     record.previewSent -> {
-                        Decision.Update { it.copy(deletedOnServer = true) }
+                        Decision.ConfirmDeleted
                     }
 
                     // The server lost a photo it never had the preview of, perhaps because its data was reset.
