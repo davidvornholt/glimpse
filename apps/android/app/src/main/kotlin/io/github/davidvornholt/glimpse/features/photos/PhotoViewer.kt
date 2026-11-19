@@ -2,6 +2,7 @@ package io.github.davidvornholt.glimpse.features.photos
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.core.Transition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -38,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +59,7 @@ import io.github.davidvornholt.glimpse.R
 import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
 import io.github.davidvornholt.glimpse.shared.photos.UploadState
 import io.github.davidvornholt.glimpse.shared.ui.LocalSharedTransitionScope
+import io.github.davidvornholt.glimpse.shared.ui.LocalViewerSettled
 import io.github.davidvornholt.glimpse.shared.ui.NoteSheet
 import io.github.davidvornholt.glimpse.shared.ui.PhotoImage
 import io.github.davidvornholt.glimpse.shared.ui.SeenBadge
@@ -69,16 +72,15 @@ import io.github.davidvornholt.glimpse.shared.ui.photoDescription
 import io.github.davidvornholt.glimpse.shared.ui.rememberPredictiveBack
 import io.github.davidvornholt.glimpse.shared.ui.sharedPhotoKey
 import io.github.davidvornholt.glimpse.shared.ui.uploadStatus
-import kotlinx.coroutines.flow.filterNotNull
-import kotlin.math.abs
 
 /**
  * A photo full screen, grown out of the thumbnail that opened it. Swipe
- * for the next one; tap to hide the controls.
+ * for the next one; tap to hide the controls. [shown] runs it open and
+ * closed.
  */
 @Composable
 fun PhotoViewer(
-    visible: Boolean,
+    shown: Transition<Boolean>,
     items: List<GalleryItem>,
     origin: String,
     currentId: String?,
@@ -87,8 +89,8 @@ fun PhotoViewer(
     actions: PhotoActions,
     modifier: Modifier = Modifier,
 ) {
-    AnimatedVisibility(
-        visible = visible && currentId != null,
+    shown.AnimatedVisibility(
+        visible = { it },
         modifier = modifier,
         enter = fadeIn(MaterialTheme.motionScheme.defaultEffectsSpec()),
         exit = fadeOut(MaterialTheme.motionScheme.defaultEffectsSpec()),
@@ -98,7 +100,7 @@ fun PhotoViewer(
             items = items,
             origin = origin,
             currentId = currentId.orEmpty(),
-            open = visible,
+            open = shown.targetState,
             onPageChange = onPageChange,
             onClose = onClose,
             actions = actions,
@@ -125,20 +127,21 @@ private fun ViewerContent(
     val pager =
         rememberPagerState(initialPage = items.indexOfFirst { it.id == currentId }.coerceAtLeast(0)) { items.size }
     val pageChange by rememberUpdatedState(onPageChange)
-    // The photo pairs with its thumbnail only once the swipe has come to rest. Compose remembers where
-    // the page was when they paired, and closing would start the shrink off by however far the page
-    // still had to travel. settledPage isn't enough: it changes as soon as the finger lifts.
     LaunchedEffect(pager, items) {
-        snapshotFlow {
-            pager.currentPage.takeIf { !pager.isScrollInProgress && abs(pager.currentPageOffsetFraction) < AT_REST }
-        }.filterNotNull().collect { page -> items.getOrNull(page)?.id?.let(pageChange) }
+        snapshotFlow { pager.currentPage }.collect { page -> items.getOrNull(page)?.id?.let(pageChange) }
     }
+    // The photo that fills most of the screen is the one that grows and shrinks with the thumbnail,
+    // even when the viewer closes before a swipe has come to rest. It changes only while the viewer
+    // is fully open: a swipe that settles after the viewer began to close, or the very frame it
+    // does, would otherwise hand the flight to a photo with nowhere to start from.
+    val settled = LocalViewerSettled.current
+    val flight = remember { Flight(currentId) }
+    val flyingId = if (settled) currentId else flight.id
+    SideEffect { flight.id = flyingId }
     LaunchedEffect(items.isEmpty()) { if (items.isEmpty()) onClose() }
     // The controls follow the page that fills most of the screen, so they never act on a photo that
     // is sliding away.
     val current = items.getOrNull(pager.currentPage) ?: items.firstOrNull { it.id == currentId }
-    // Fully open, not growing out of a thumbnail or shrinking back into one.
-    val opened = open && visibility.transition.run { currentState == targetState }
 
     Box(
         Modifier
@@ -165,13 +168,17 @@ private fun ViewerContent(
                     }
                 },
             ) {
-                ViewerImage(item, origin, shared = item.id == currentId, opened = opened, visibility = visibility)
+                ViewerImage(item, origin, shared = item.id == flyingId, visibility = visibility)
             }
         }
 
+        // The photo flies above everything else on its way in and out, so the controls wait for it to
+        // land and leave as it lifts off. Shown during the flight, they vanished under the photo and
+        // popped back when it landed.
+        val controls = chrome && settled
         if (current != null) {
             AnimatedVisibility(
-                chrome,
+                controls,
                 Modifier.align(Alignment.TopCenter),
                 enter = fadeIn() + slideInVertically { -it / 2 },
                 exit = fadeOut() + slideOutVertically { -it / 2 },
@@ -179,7 +186,7 @@ private fun ViewerContent(
                 ViewerTopBar(current, onClose)
             }
             AnimatedVisibility(
-                chrome,
+                controls,
                 Modifier.align(Alignment.BottomCenter),
                 enter = fadeIn() + slideInVertically { it / 2 },
                 exit = fadeOut() + slideOutVertically { it / 2 },
@@ -214,20 +221,13 @@ private fun ViewerImage(
     item: GalleryItem,
     origin: String,
     shared: Boolean,
-    opened: Boolean,
     visibility: AnimatedVisibilityScope,
 ) {
     val transition = LocalSharedTransitionScope.current
     val sharedModifier =
         if (transition != null && shared) {
             with(transition) {
-                Modifier.sharedElement(
-                    rememberSharedContentState(sharedPhotoKey(origin, item.id)),
-                    visibility,
-                    // Only opening and closing fly the photo above everything. A swipe pairs the next
-                    // photo with its thumbnail too, and in the overlay it would cover the controls.
-                    renderInOverlayDuringTransition = !opened,
-                )
+                Modifier.sharedElement(rememberSharedContentState(sharedPhotoKey(origin, item.id)), visibility)
             }
         } else {
             Modifier
@@ -336,10 +336,12 @@ private fun ToolbarButton(
     }
 }
 
+/** The photo that flies, kept across compositions without asking for another. */
+private class Flight(
+    var id: String,
+)
+
 private const val SCRIM_ALPHA = 0.5f
 private const val SECONDARY_ALPHA = 0.75f
 private const val BACK_FADE = 0.4f
 private const val NOTE_LINES = 4
-
-// A thousandth of a page, about a pixel.
-private const val AT_REST = 0.001f
