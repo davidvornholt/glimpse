@@ -1,8 +1,8 @@
 package io.github.davidvornholt.glimpse.features.photos
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Transition
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.core.Transition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -337,10 +337,11 @@ private fun ToolbarButton(
 }
 
 /** The photo that flies, kept across compositions without asking for another. */
-private class Flight(var id: String)
+private class Flight(
+    var id: String,
+)
 
 private const val SCRIM_ALPHA = 0.5f
 private const val SECONDARY_ALPHA = 0.75f
 private const val BACK_FADE = 0.4f
 private const val NOTE_LINES = 4
-
