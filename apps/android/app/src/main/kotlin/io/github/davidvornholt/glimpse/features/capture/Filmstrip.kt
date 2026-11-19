@@ -46,7 +46,7 @@ fun Filmstrip(
             val key = sharedPhotoKey(FILMSTRIP, item.id)
             SharedPhotoSource(
                 key = key,
-                visible = key != hiddenKey,
+                hiddenKey = hiddenKey,
                 modifier =
                     Modifier
                         .animateItem()
