@@ -198,6 +198,33 @@ class MetadataStripperTest {
     }
 
     @Test
+    fun `keeps only the chunks that draw each frame of an animated WebP`() {
+        val frameHeader = bytes(0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 100, 0, 0, 0)
+        val alpha = riffChunk("ALPH", bytes(0, 9, 9))
+        val image = riffChunk("VP8L", bytes(0x2F, 0, 0, 0, 0))
+        val animation = riffChunk("ANIM", bytes(0, 0, 0, 0, 0, 0))
+        val webp =
+            webp(
+                extendedHeader(0x02 or 0x10),
+                animation,
+                riffChunk("ANMF", join(frameHeader, image)),
+                riffChunk("ANMF", join(frameHeader, alpha, riffChunk("PRIV", ascii("Ada Lovelace")), image)),
+            )
+
+        val stripped = MetadataStripper.stripWebp(webp)
+
+        assertContentEquals(
+            webp(
+                extendedHeader(0x02 or 0x10),
+                animation,
+                riffChunk("ANMF", join(frameHeader, image)),
+                riffChunk("ANMF", join(frameHeader, alpha, image)),
+            ),
+            stripped,
+        )
+    }
+
+    @Test
     fun `refuses what isn't a WebP`() {
         assertFailsWith<IllegalArgumentException> { MetadataStripper.stripWebp(join(ascii("RIFF"), littleEndian(4), ascii("WAVE"))) }
         assertFailsWith<IllegalArgumentException> {

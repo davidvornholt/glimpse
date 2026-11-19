@@ -120,36 +120,57 @@ object MetadataStripper {
                 String(input, 8, 4, Charsets.US_ASCII) == "WEBP",
         ) { "Not a WebP" }
         val riffEnd = minOf(input.size.toLong(), RIFF_PREAMBLE + input.u32LittleEndian(4)).toInt()
-        val chunks = ByteArrayOutputStream(input.size)
-        var position = WEBP_HEADER
-        while (position + RIFF_PREAMBLE <= riffEnd) {
-            val type = String(input, position, 4, Charsets.US_ASCII)
-            val size = input.u32LittleEndian(position + 4)
-            val padded = size + (size and 1)
-            require(position + RIFF_PREAMBLE + padded <= riffEnd) { "A WebP chunk runs past the end" }
-            val end = position + RIFF_PREAMBLE + padded.toInt()
-            when (type) {
-                !in WEBP_KEPT_CHUNKS -> {}
-
-                "VP8X" -> {
-                    val chunk = input.copyOfRange(position, end)
-                    chunk[RIFF_PREAMBLE] = (chunk[RIFF_PREAMBLE].toInt() and (VP8X_EXIF or VP8X_XMP).inv()).toByte()
-                    chunks.write(chunk)
-                }
-
-                else -> {
-                    chunks.write(input, position, end - position)
-                }
-            }
-            position = end
-        }
-        val body = chunks.toByteArray()
+        val body = keptRiffChunks(input, WEBP_HEADER, riffEnd, WEBP_KEPT_CHUNKS)
         val out = ByteArrayOutputStream(WEBP_HEADER + body.size)
         out.write("RIFF".toByteArray(Charsets.US_ASCII))
         out.write(littleEndian(4 + body.size))
         out.write("WEBP".toByteArray(Charsets.US_ASCII))
         out.write(body)
         return out.toByteArray()
+    }
+
+    /** The chunks of a WebP from [start] to [end] that are in [kept], each frame of an animation rebuilt the same way. */
+    private fun keptRiffChunks(
+        input: ByteArray,
+        start: Int,
+        end: Int,
+        kept: Set<String>,
+    ): ByteArray {
+        val chunks = ByteArrayOutputStream(end - start)
+        var position = start
+        while (position + RIFF_PREAMBLE <= end) {
+            val type = String(input, position, 4, Charsets.US_ASCII)
+            val size = input.u32LittleEndian(position + 4)
+            val padded = size + (size and 1)
+            require(position + RIFF_PREAMBLE + padded <= end) { "A WebP chunk runs past the end" }
+            val dataStart = position + RIFF_PREAMBLE
+            val chunkEnd = dataStart + padded.toInt()
+            when (type) {
+                !in kept -> {}
+
+                "VP8X" -> {
+                    val chunk = input.copyOfRange(position, chunkEnd)
+                    chunk[RIFF_PREAMBLE] = (chunk[RIFF_PREAMBLE].toInt() and (VP8X_EXIF or VP8X_XMP).inv()).toByte()
+                    chunks.write(chunk)
+                }
+
+                // A frame may hold chunks of its own after its header, and only those that draw it stay.
+                "ANMF" -> {
+                    require(size >= ANMF_HEADER) { "A WebP frame is too short" }
+                    val frame = keptRiffChunks(input, dataStart + ANMF_HEADER, dataStart + size.toInt(), WEBP_FRAME_CHUNKS)
+                    chunks.write("ANMF".toByteArray(Charsets.US_ASCII))
+                    chunks.write(littleEndian(ANMF_HEADER + frame.size))
+                    chunks.write(input, dataStart, ANMF_HEADER)
+                    chunks.write(frame)
+                }
+
+                else -> {
+                    chunks.write(input, position, chunkEnd - position)
+                }
+            }
+            position = chunkEnd
+        }
+        return chunks.toByteArray()
     }
 
     private fun keepsSegment(
@@ -310,6 +331,8 @@ object MetadataStripper {
         )
 
     private val WEBP_KEPT_CHUNKS = setOf("VP8X", "VP8 ", "VP8L", "ALPH", "ANIM", "ANMF", "ICCP")
+    private val WEBP_FRAME_CHUNKS = setOf("ALPH", "VP8 ", "VP8L")
+    private const val ANMF_HEADER = 16
     private const val WEBP_HEADER = 12
     private const val RIFF_PREAMBLE = 8
     private const val VP8X_EXIF = 0x08
