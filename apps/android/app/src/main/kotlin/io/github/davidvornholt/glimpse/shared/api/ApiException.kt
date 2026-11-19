@@ -8,7 +8,6 @@ enum class ApiErrorTag {
     NotFound,
     Conflict,
     TooLarge,
-    RateLimited,
     ServerError,
 
     /** A tag this version of the app doesn't know, or a body that isn't an error. */

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { parsePairingLink } from '@glimpse/api/pairing-link';
 import { Option } from 'effect';
+import { maxJsonBodyBytes } from './server.ts';
 import {
   bearer,
   newPairingCode,
@@ -80,19 +81,15 @@ describe('pairing a phone', () => {
     expect(await again.json()).toMatchObject({ error: { tag: 'NotFound' } });
   });
 
-  it('stops taking codes after ten wrong ones', async () => {
+  it('takes a good code however many wrong ones came before it', async () => {
     const code = await newPairingCode(server);
     const wrong = await Promise.all(
-      Array.from({ length: 10 }, () => claim('WRONGWRONGWRONGWRONGWRON')),
+      Array.from({ length: 20 }, () => claim('WRONGWRONGWRONGWRONGWRON')),
     );
     expect(wrong.map((answer) => answer.status)).toEqual(
-      Array.from({ length: 10 }, () => 404),
+      Array.from({ length: 20 }, () => 404),
     );
-    const response = await claim(code);
-    expect(response.status).toBe(429);
-    expect(await response.json()).toMatchObject({
-      error: { tag: 'RateLimited' },
-    });
+    expect((await claim(code)).status).toBe(201);
   });
 
   it('lets only the owner make codes and list phones', async () => {
@@ -123,6 +120,61 @@ describe('pairing a phone', () => {
     server = await startTestServer({ dataDirectory: server.dataDirectory });
     const me = await server.fetch('/v1/me', { headers: bearer(token) });
     expect(me.status).toBe(200);
+  });
+});
+
+describe('an oversized claim', () => {
+  it('refuses an oversized claim that states its length before reading it', async () => {
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull: (controller) => {
+          pulls += 1;
+          controller.enqueue(new Uint8Array(maxJsonBodyBytes + 1));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const response = await server.fetch('/v1/pairings/claim', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': String(maxJsonBodyBytes + 1),
+      },
+      body,
+      duplex: 'half',
+    } as RequestInit);
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ error: { tag: 'TooLarge' } });
+    expect(pulls).toBe(0);
+  });
+
+  it('stops reading an oversized claim that does not state its length', async () => {
+    const offered = 64 * maxJsonBodyBytes;
+    let sent = 0;
+    const chunk = new TextEncoder().encode('x'.repeat(4096));
+    const body = new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        controller.enqueue(new TextEncoder().encode('{"code":"'));
+      },
+      pull: (controller) => {
+        sent += chunk.byteLength;
+        if (sent > offered) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(chunk);
+      },
+    });
+    const response = await server.fetch('/v1/pairings/claim', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      duplex: 'half',
+    } as RequestInit);
+    expect(response.status).toBe(413);
+    expect(sent).toBeLessThan(offered);
   });
 });
 

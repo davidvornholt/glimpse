@@ -142,7 +142,6 @@
     <string name="pairing_claiming">Pairing with %1$s…</string>
     <string name="pairing_failed_title">Couldn’t pair</string>
     <string name="pairing_failed_expired">The code expired or was already used. Run glimpse pair again for a new one.</string>
-    <string name="pairing_failed_tries">Too many tries. Wait ten minutes, then run glimpse pair again.</string>
     <string name="pairing_failed_rejected">The server didn’t accept the pairing. Run glimpse pair again and scan the new code.</string>
     <string name="pairing_failed_unreachable">Couldn’t reach %1$s. Check that this phone is online and the server is running, then try again.</string>
     <string name="pairing_failed_local_network">Glimpse needs access to your local network to reach %1$s. Allow it when Android asks, or under Permissions in the app’s settings, then try again.</string>

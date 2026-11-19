@@ -330,7 +330,6 @@ class GlimpseApi(
             404 -> ApiErrorTag.NotFound
             409 -> ApiErrorTag.Conflict
             413 -> ApiErrorTag.TooLarge
-            429 -> ApiErrorTag.RateLimited
             in 500..599 -> ApiErrorTag.ServerError
             else -> ApiErrorTag.Unknown
         }

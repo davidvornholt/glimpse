@@ -15,7 +15,7 @@ Every route but `/healthz` and `POST /v1/pairings/claim` takes `Authorization: B
 1. `POST /v1/pairings` (owner) returns `glimpse://pair?server=<base URL>&code=<code>`, the link the phone scans as a QR code. The base URL is `GLIMPSE_PUBLIC_URL`.
 2. The phone sends the code with a device name to `POST /v1/pairings/claim` and gets its token, which the server shows only this once and keeps as a digest.
 
-A code works once, for ten minutes, and lives only in memory, so a restart forgets it. After ten wrong codes in ten minutes, claims answer `RateLimited` until the window passes.
+A code works once, for ten minutes, and lives only in memory, so a restart forgets it. Wrong codes aren't rate limited.
 
 ## Sending a photo
 
@@ -54,7 +54,6 @@ Every error, including the ones the framework raises for a bad query, an unknown
 | 403 | `Forbidden`, such as a phone pairing another phone |
 | 404 | `NotFound`, also for a wrong method |
 | 409 | `Conflict` |
-| 413 | `TooLarge`: a preview over 4 MiB or an original over 50 MiB |
+| 413 | `TooLarge`: a preview over 4 MiB, an original over 50 MiB, or a JSON body over 64 KiB |
 | 415 | `InvalidRequest`: a Content-Type the route doesn't take |
-| 429 | `RateLimited` |
 | 500 | `ServerError` |
