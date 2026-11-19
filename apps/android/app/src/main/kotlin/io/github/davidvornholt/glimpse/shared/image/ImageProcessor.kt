@@ -45,7 +45,13 @@ class ImageProcessor(
     ): PreparedImage =
         withContext(Dispatchers.IO) {
             val bytes = jpeg.readBytes()
-            prepareBytes(bytes, original, OriginalType.Jpeg, orientationOf(bytes)).also { jpeg.delete() }
+            val orientation = orientationOf(bytes)
+            if (jpeg == original) {
+                // Startup found the stripped original after CameraX's output was removed.
+                preparedSize(bytes, OriginalType.Jpeg, orientation)
+            } else {
+                prepareBytes(bytes, original, OriginalType.Jpeg, orientation).also { jpeg.delete() }
+            }
         }
 
     /** Reads a shared image and writes its stripped original to the file [original] names for its type. */
@@ -75,7 +81,15 @@ class ImageProcessor(
     ): PreparedImage {
         val stripped = MetadataStripper.strip(bytes, type, orientation)
         writeAtomically(target, stripped)
-        val bounds = bounds(stripped)
+        return preparedSize(stripped, type, orientation)
+    }
+
+    private fun preparedSize(
+        bytes: ByteArray,
+        type: OriginalType,
+        orientation: Int,
+    ): PreparedImage {
+        val bounds = bounds(bytes)
         val turned = orientation in TURNED
         return PreparedImage(type, if (turned) bounds.second else bounds.first, if (turned) bounds.first else bounds.second)
     }

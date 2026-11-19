@@ -87,6 +87,18 @@ class UploadRunnerTest {
     private fun record(note: String? = null) = CaptureRecord(id, TEST_TIME, PhotoSource.Camera, 4032, 3024, OriginalType.Jpeg, note = note)
 
     @Test
+    fun `a worker paired with another server makes no request`() =
+        runTest {
+            val server = FakeServer()
+            val record = record().copy(server = "https://glimpse.example.com")
+            val runner = UploadRunner(server, MemoryRecords(record))
+            assertEquals(UploadOutcome.Gone, runner.run(id, "https://other.glimpse.example.com"))
+            assertTrue(server.calls.isEmpty())
+            // The same server written another way, as an older version may have stored it.
+            assertEquals(UploadOutcome.Done, runner.run(id, "https://glimpse.example.com:443/"))
+        }
+
+    @Test
     fun `uploads a new photo step by step`() =
         runTest {
             val server = FakeServer()
@@ -107,7 +119,7 @@ class UploadRunnerTest {
     fun `sends a note added after the photo was registered`() =
         runTest {
             val server = FakeServer()
-            val records = MemoryRecords(record(note = "Changed my mind").copy(registered = true, registrations = 1))
+            val records = MemoryRecords(record().copy(registered = true, registrations = 1).withNote("Changed my mind"))
 
             assertEquals(UploadOutcome.Done, UploadRunner(server, records).run(id))
 

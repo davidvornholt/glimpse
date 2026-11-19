@@ -1,6 +1,7 @@
 package io.github.davidvornholt.glimpse.shared.upload
 
 import io.github.davidvornholt.glimpse.shared.api.Photo
+import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import kotlinx.coroutines.CancellationException
 import java.io.IOException
 
@@ -42,18 +43,26 @@ class UploadRunner(
     private val records: CaptureRecords,
     private val onProgress: (id: String, step: UploadStep, sent: Long, total: Long) -> Unit = { _, _, _, _ -> },
 ) {
-    suspend fun run(id: String): UploadOutcome =
+    /** Runs the upload for the phone's pairing with [server]; a photo bound to another server is left alone. */
+    suspend fun run(
+        id: String,
+        server: String? = null,
+    ): UploadOutcome =
         try {
-            runSteps(id)
+            runSteps(id, server)
         } catch (_: IOException) {
             // The phone couldn't save how far the upload got, perhaps because its storage is full.
             // The server takes each step again, so the next run starts from the last one saved.
             UploadOutcome.RetryLater
         }
 
-    private suspend fun runSteps(id: String): UploadOutcome {
+    private suspend fun runSteps(
+        id: String,
+        server: String?,
+    ): UploadOutcome {
         while (true) {
             val record = records.get(id) ?: return UploadOutcome.Gone
+            if (record.server != null && (server == null || !PairingLink.sameServer(record.server, server))) return UploadOutcome.Gone
             if (record.failure != null) return UploadOutcome.Failed
             val step = UploadPlan.nextStep(record) ?: return UploadOutcome.Done
             val photo =
@@ -88,7 +97,7 @@ class UploadRunner(
                         }
                     }
                 }
-            records.update(id) { UploadPlan.succeeded(it, step, photo) } ?: return UploadOutcome.Gone
+            records.update(id) { UploadPlan.succeeded(it, step, photo, record) } ?: return UploadOutcome.Gone
         }
     }
 

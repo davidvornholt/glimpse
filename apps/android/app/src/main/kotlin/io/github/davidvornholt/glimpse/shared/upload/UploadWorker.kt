@@ -19,6 +19,7 @@ class UploadWorker(
         val id = inputData.getString(KEY_ID) ?: return Result.failure()
         val graph = (applicationContext as GlimpseApp).graph
         val session = graph.sessions.currentSession() ?: return Result.failure()
+        if (!graph.sessions.isCurrent(session.server)) return Result.retry()
         val api = graph.api(session)
         val store = graph.captures
         // The server's answers go to the feed too, so the photo shows the note the phone just sent.
@@ -26,7 +27,7 @@ class UploadWorker(
         val runner = UploadRunner(target, store, graph.uploads::reportProgress)
         val outcome =
             try {
-                runner.run(id)
+                runner.run(id, session.server)
             } finally {
                 graph.uploads.finished(id)
             }

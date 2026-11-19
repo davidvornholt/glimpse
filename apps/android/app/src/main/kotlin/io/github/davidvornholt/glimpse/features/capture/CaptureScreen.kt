@@ -83,6 +83,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.davidvornholt.glimpse.R
 import io.github.davidvornholt.glimpse.shared.api.ApiException
+import io.github.davidvornholt.glimpse.shared.api.OriginalType
 import io.github.davidvornholt.glimpse.shared.api.PhotoSource
 import io.github.davidvornholt.glimpse.shared.haptics.Haptics
 import io.github.davidvornholt.glimpse.shared.photos.Connection
@@ -95,10 +96,10 @@ import io.github.davidvornholt.glimpse.shared.settings.SettingsStore
 import io.github.davidvornholt.glimpse.shared.ui.CameraPermissionPrompt
 import io.github.davidvornholt.glimpse.shared.ui.localDate
 import io.github.davidvornholt.glimpse.shared.ui.rememberCameraPermission
+import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.File
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
@@ -113,6 +114,7 @@ import kotlin.math.roundToInt
 fun CaptureScreen(
     library: PhotoLibrary,
     settingsStore: SettingsStore,
+    server: String,
     feed: PhotoFeed,
     haptics: Haptics,
     appScope: CoroutineScope,
@@ -135,12 +137,12 @@ fun CaptureScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val settings by settingsStore.settings.collectAsStateWithLifecycle()
-    val items by library.items.collectAsStateWithLifecycle()
+    val snapshot by library.galleryState.collectAsStateWithLifecycle()
     val waiting by feed.waiting.collectAsStateWithLifecycle()
     val connection by feed.connection.collectAsStateWithLifecycle()
     val permission = rememberCameraPermission()
     val today = LocalDate.now()
-    val todays = items.filter { it.sentAt.localDate() == today }
+    val todays = snapshot.items.filter { it.sentAt.localDate() == today }
 
     val controller =
         remember {
@@ -179,16 +181,32 @@ fun CaptureScreen(
 
     val scan =
         rememberDocumentScanner(
-            onPages = { pages ->
+            newId = library::newId,
+            recover = library::recoverNotes,
+            reserve = settingsStore::reserveNote,
+            release = { settingsStore.finishNote(it, used = false) },
+            onPages = { id, pages ->
                 appScope.launch {
+                    var added = 0
                     try {
-                        val result = library.addImages(pages, PhotoSource.Scan, settingsStore.takePendingNote())
+                        if (pages.isEmpty()) return@launch
+                        val result =
+                            library.addImages(
+                                pages,
+                                PhotoSource.Scan,
+                                settingsStore.reservedNote(id),
+                                library.newBatch(pages.size, id),
+                                server,
+                            )
+                        added = result.added
                         when {
-                            result.isPartial -> snackbar.showSnackbar(messages.scanPartial(result.added, result.total))
-                            !result.isComplete -> snackbar.showSnackbar(messages.scanFailed)
+                            result.isPartial -> show(messages.scanPartial(result.added, result.total))
+                            !result.isComplete -> show(messages.scanFailed)
                         }
                     } catch (_: IOException) {
-                        snackbar.showSnackbar(messages.scanFailed)
+                        show(messages.scanFailed)
+                    } finally {
+                        settingsStore.finishNote(id, used = added > 0)
                     }
                 }
             },
@@ -215,30 +233,48 @@ fun CaptureScreen(
             val slot = firstSlotIn(stripBounds, density.density, direction)
             flight = Flight(id, frame.asImageBitmap(), viewfinderBounds, slot)
         }
-        val file = File(context.cacheDir, "capture-$id.jpg")
-        controller.takePicture(
-            ImageCapture.OutputFileOptions.Builder(file).build(),
-            ContextCompat.getMainExecutor(context),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    appScope.launch {
-                        try {
-                            library.addCapture(id, file, takenAt)
-                        } catch (_: IOException) {
-                            file.delete()
-                            snackbar.showSnackbar(messages.captureFailed)
+        val record =
+            CaptureRecord(
+                id,
+                takenAt,
+                PhotoSource.Camera,
+                1,
+                1,
+                OriginalType.Jpeg,
+            )
+        appScope.launch {
+            try {
+                val file = library.beginCapture(record)
+                controller.takePicture(
+                    ImageCapture.OutputFileOptions.Builder(file).build(),
+                    ContextCompat.getMainExecutor(context),
+                    object : ImageCapture.OnImageSavedCallback {
+                        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                            appScope.launch {
+                                try {
+                                    library.addCapture(record, file)
+                                } catch (_: IOException) {
+                                    show(messages.captureFailed)
+                                }
+                            }
                         }
-                    }
-                }
 
-                override fun onError(exception: ImageCaptureException) {
-                    library.dropPending(id)
-                    file.delete()
-                    if (flight?.id == id) flight = null
-                    show(messages.captureFailed)
-                }
-            },
-        )
+                        override fun onError(exception: ImageCaptureException) {
+                            appScope.launch { library.cancelCapture(id) }
+                            if (flight?.id == id) flight = null
+                            show(messages.captureFailed)
+                        }
+                    },
+                )
+            } catch (_: IOException) {
+                library.cancelCapture(id)
+                show(messages.captureFailed)
+            } catch (_: IllegalStateException) {
+                // The activity can rotate while the capture journal is being saved.
+                library.cancelCapture(id)
+                show(messages.captureFailed)
+            }
+        }
     }
 
     GlimpseCameraSurface(modifier.onGloballyPositioned { origin = it.positionInRoot() }) {

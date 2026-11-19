@@ -10,7 +10,6 @@ import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class CaptureStoreTest {
@@ -36,14 +35,14 @@ class CaptureStoreTest {
         }
 
     @Test
-    fun `drops a capture the process died in the middle of`() =
+    fun `keeps the only original when a legacy capture has no record`() =
         runTest {
             val unfinished = File(root, "01JD0000000000000000000000").apply { mkdirs() }
             File(unfinished, "original.jpg").writeText("jpeg")
 
             CaptureStore(root).load()
 
-            assertFalse(unfinished.exists())
+            assertTrue(File(unfinished, "original.jpg").isFile)
         }
 
     @Test

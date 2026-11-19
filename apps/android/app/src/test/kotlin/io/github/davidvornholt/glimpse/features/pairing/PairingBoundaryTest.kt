@@ -1,5 +1,6 @@
 package io.github.davidvornholt.glimpse.features.pairing
 
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import io.github.davidvornholt.glimpse.shared.api.ApiErrorTag
 import io.github.davidvornholt.glimpse.shared.api.ApiException
 import io.github.davidvornholt.glimpse.shared.api.ClaimResult
@@ -41,6 +42,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -96,9 +98,22 @@ class PairingBoundaryTest {
         )
         feed = PhotoFeed(sessions, { api }, backgroundScope)
         library =
-            PhotoLibrary(captures, uploads, deletes, feed, sessions, settings, mock(), gallery, UlidGenerator(), {
-                api
-            }, root, { revoked.add(it) }, backgroundScope)
+            PhotoLibrary(
+                captures,
+                PreferenceDataStoreFactory.create(scope = backgroundScope) { File(root, "undo.preferences_pb") },
+                uploads,
+                deletes,
+                feed,
+                sessions,
+                settings,
+                mock(),
+                gallery,
+                UlidGenerator(),
+                { api },
+                root,
+                { revoked.add(it) },
+                backgroundScope,
+            )
         return PairingClaimer({ api }, sessions, library)
     }
 
@@ -117,7 +132,35 @@ class PairingBoundaryTest {
     private suspend fun uploadAll(session: Session) {
         val target = remote.asDevice(session.deviceId)
         captures.records.value.keys
-            .forEach { UploadRunner(target, captures).run(it) }
+            .forEach { UploadRunner(target, captures).run(it, session.server) }
+    }
+
+    /** A shared photo the old device uploaded completely, whose note was changed on the phone since. */
+    private suspend fun TestScope.sendsOnlyTheNoteOfAnUploadedShare(note: String?) {
+        val claimer = claimer()
+        val shared = record.copy(source = PhotoSource.Share, server = old.server)
+        remote.registerAs(old.deviceId, shared.copy(note = "old caption"))
+        remote.photos[record.id] = remote.photos.getValue(record.id).copy(preview = "preview", original = "original")
+        val uploaded =
+            shared
+                .copy(
+                    note = "old caption",
+                    serverNote = "old caption",
+                    registered = true,
+                    previewSent = true,
+                    originalSent = true,
+                    registrations = 1,
+                ).withNote(note)
+        keep(uploaded, withOriginal = false)
+        uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+        assertEquals(listOf(UploadStep.Note to record.id), remote.requests)
+        assertEquals(note, remote.photos.getValue(record.id).note)
+        val kept =
+            captures.records.value.values
+                .single()
+        assertEquals(record.id, kept.id)
+        assertEquals(note, kept.serverNote)
+        assertEquals(0, kept.noteEdit)
     }
 
     /** The one capture went to the server again from scratch, under a fresh id the new device owns. */
@@ -132,6 +175,10 @@ class PairingBoundaryTest {
         assertEquals(FakeServer.Stored(newDevice, uploaded.metadata.copy(note = null), note, "preview", "original"), stored)
         // The phone deletes its original only once the server has it.
         assertFalse(captures.originalFile(uploaded).exists())
+    }
+
+    private companion object {
+        const val UNDO_MILLIS = 10_000L
     }
 
     @AfterTest fun cleanUp() {
@@ -227,23 +274,44 @@ class PairingBoundaryTest {
             remote.registerAs(old.deviceId, record.copy(note = "old caption"))
             remote.photos[record.id] = remote.photos.getValue(record.id).copy(preview = "preview", original = "original")
             val uploaded =
-                record.copy(
-                    note = "new caption",
-                    serverNote = "old caption",
-                    registered = true,
-                    previewSent = true,
-                    originalSent = true,
-                    registrations = 1,
-                )
+                record
+                    .copy(
+                        note = "old caption",
+                        serverNote = "old caption",
+                        registered = true,
+                        previewSent = true,
+                        originalSent = true,
+                        registrations = 1,
+                    ).withNote("new caption")
             keep(uploaded, withOriginal = false)
             uploadAll(claimer.claim(link.copy(server = server), "Phone"))
             assertEquals(listOf(UploadStep.Note to record.id), remote.requests)
             assertEquals("new caption", remote.photos.getValue(record.id).note)
             assertEquals(
-                uploaded.copy(serverNote = "new caption"),
+                uploaded.copy(serverNote = "new caption", noteEdit = 0),
                 captures.records.value.values
                     .single(),
             )
+        }
+
+    @Test fun `a fully uploaded share sends its new note after pairing again with the same server`() =
+        runTest {
+            sendsOnlyTheNoteOfAnUploadedShare("new caption")
+        }
+
+    @Test fun `a fully uploaded share sends its removed note after pairing again with the same server`() =
+        runTest {
+            sendsOnlyTheNoteOfAnUploadedShare(null)
+        }
+
+    @Test fun `an unfinished share finishes uploading under the new device on the same server`() =
+        runTest {
+            val claimer = claimer()
+            val shared = record.copy(source = PhotoSource.Share, server = old.server)
+            remote.registerAs(old.deviceId, shared)
+            keep(shared.copy(registered = true, registrations = 1))
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertUploadedAgain()
         }
 
     @Test fun `a photo waiting for its delete keeps its id, so the delete still finds it`() =
@@ -252,22 +320,40 @@ class PairingBoundaryTest {
             remote.registerAs(old.deviceId, record)
             val waiting = record.copy(registered = true, registrations = 1)
             keep(waiting)
-            assertEquals(server, library.hide(record.id))
+            library.startDelete(record.id, UNDO_MILLIS)
+            assertEquals(server, library.undo.current()?.server)
             val session = claimer.claim(link.copy(server = server), "Phone")
             `when`(sessions.currentSession()).thenReturn(session)
             val kept = captures.get(record.id)
             assertEquals("original", kept?.let { captures.originalFile(it).readText() })
             uploadAll(session)
-            library.delete(record.id, server)
+            // Undo runs out, which deletes the photo.
+            advanceTimeBy(UNDO_MILLIS * 2)
+            runCurrent()
             assertEquals(emptyMap(), captures.records.value)
             assertEquals(setOf(record.id), remote.photos.keys)
             assertEquals(waiting, kept)
         }
 
+    @Test fun `a photo deleted after the server removed this phone doesn't upload again after pairing again`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record)
+            keep(record.copy(registered = true, registrations = 1))
+            library.startDelete(record.id, UNDO_MILLIS)
+            // The server removes this phone before Undo runs out, so the delete has no pairing to go with.
+            `when`(sessions.currentSession()).thenReturn(null)
+            advanceTimeBy(UNDO_MILLIS * 2)
+            runCurrent()
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertEquals(emptyMap(), captures.records.value)
+            assertEquals(setOf(record.id), remote.photos.keys)
+        }
+
     @Test fun `switching clears the next photo note`() =
         runTest {
             claimer().claim(link, "Phone")
-            verify(settings).setPendingNote(null)
+            verify(settings).clearNotes()
         }
 
     @Test fun `switching clears photos and waiters before the new server lists anything`() =
@@ -275,11 +361,14 @@ class PairingBoundaryTest {
             val claimer = claimer()
             feed.start()
             runCurrent()
-            assertEquals(setOf(TEST_PHOTO_ID), feed.photos.value.keys)
+            assertEquals(setOf(TEST_PHOTO_ID), feed.photos.value.photos.keys)
             assertEquals(2, feed.waiting.value)
             claimer.claim(link, "Phone")
             feed.upsert(old, testPhoto())
-            assertTrue(feed.photos.value.isEmpty())
+            assertTrue(
+                feed.photos.value.photos
+                    .isEmpty(),
+            )
             assertEquals(0, feed.waiting.value)
         }
 
@@ -289,7 +378,7 @@ class PairingBoundaryTest {
             val shared = File(root, "shared").apply { mkdirs() }
             File(shared, "shared.jpg").writeText("copy")
             File(shared, "download.jpg").writeText("original")
-            library.clear()
+            library.changePairing(null)
             assertEquals(setOf("shared.jpg", "download.jpg"), revoked.map { it.name }.toSet())
             assertFalse(shared.exists())
         }
@@ -311,7 +400,7 @@ class PairingBoundaryTest {
             val photo = library.fileFor(GalleryItem.merge(record.id, record, null, null, null, null)!!)
             val saving = launch(Dispatchers.IO) { library.saveToGallery(record.id, photo) }
             withContext(Dispatchers.IO) { reading.await() }
-            val clearing = launch { library.clear() }
+            val clearing = launch { library.changePairing(null) }
             // Gives clearing the time to delete the capture if it doesn't wait for the save.
             withContext(Dispatchers.IO) { withTimeoutOrNull(500.milliseconds) { while (captures.records.value.isNotEmpty()) delay(10) } }
             release.countDown()

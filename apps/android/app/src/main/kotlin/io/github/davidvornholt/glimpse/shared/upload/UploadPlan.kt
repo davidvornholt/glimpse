@@ -27,7 +27,7 @@ object UploadPlan {
         when {
             record.failure != null || record.deletedOnServer -> null
             !record.registered -> UploadStep.Register
-            record.note != record.serverNote -> UploadStep.Note
+            record.noteEdit != 0L -> UploadStep.Note
             !record.previewSent -> UploadStep.Preview
             !record.originalSent && !record.originalSkipped -> UploadStep.Original
             else -> null
@@ -38,24 +38,20 @@ object UploadPlan {
         record: CaptureRecord,
         step: UploadStep,
         photo: Photo,
-    ): CaptureRecord =
-        when (step) {
-            UploadStep.Register -> {
-                record.copy(registered = true, serverNote = photo.note, registrations = record.registrations + 1)
-            }
-
-            UploadStep.Note -> {
-                record.copy(serverNote = photo.note)
-            }
-
-            UploadStep.Preview -> {
-                record.copy(previewSent = true, serverNote = photo.note)
-            }
-
-            UploadStep.Original -> {
-                record.copy(originalSent = true, serverNote = photo.note)
-            }
+        sent: CaptureRecord = record,
+    ): CaptureRecord {
+        val acknowledged =
+            (step == UploadStep.Note || step == UploadStep.Register) &&
+                record.noteEdit == sent.noteEdit && sent.note == photo.note
+        val edit = if (acknowledged) 0L else record.noteEdit
+        val next = record.copy(serverNote = photo.note, note = if (edit == 0L) photo.note else record.note, noteEdit = edit)
+        return when (step) {
+            UploadStep.Register -> next.copy(registered = true, registrations = record.registrations + 1)
+            UploadStep.Note -> next
+            UploadStep.Preview -> next.copy(previewSent = true)
+            UploadStep.Original -> next.copy(originalSent = true)
         }
+    }
 
     sealed interface Decision {
         /** Change the record and go on at once. */

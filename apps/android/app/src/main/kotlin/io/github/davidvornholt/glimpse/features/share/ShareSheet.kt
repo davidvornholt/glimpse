@@ -38,10 +38,7 @@ import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,76 +50,61 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.davidvornholt.glimpse.R
 import io.github.davidvornholt.glimpse.shared.haptics.Haptics
 import io.github.davidvornholt.glimpse.shared.photos.ImportResult
+import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
 import io.github.davidvornholt.glimpse.shared.ui.NoteField
 import io.github.davidvornholt.glimpse.shared.ui.PhotoImage
 import kotlinx.coroutines.delay
-
-private enum class Stage { Editing, Sending, Sent, Partial, Failed }
 
 /**
  * Sends images shared from another app, with an optional note. The images
  * lose their location and other metadata before they leave the phone.
  */
 @Composable
-fun ShareSheet(
+internal fun ShareSheet(
     images: List<Uri>,
-    paired: Boolean,
+    server: String?,
+    library: PhotoLibrary,
     haptics: Haptics,
-    send: suspend (images: List<Uri>, note: String?) -> ImportResult,
     onOpenApp: () -> Unit,
     onFinish: () -> Unit,
 ) {
     val view = LocalView.current
-    val sheetState = rememberBottomSheetState(SheetValue.Hidden, setOf(SheetValue.Hidden, SheetValue.Expanded))
+    val model: ShareImport = viewModel(factory = ShareImport.factory)
+    val stage = model.stage
+    val sheetState =
+        rememberBottomSheetState(SheetValue.Hidden, setOf(SheetValue.Hidden, SheetValue.Expanded)) { value ->
+            value != SheetValue.Hidden || model.stage != Stage.Sending
+        }
     val note = rememberTextFieldState()
-    var stage by remember { mutableStateOf(Stage.Editing) }
-    var sending by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf(ImportResult(0, images.size)) }
     val finish by rememberUpdatedState(onFinish)
-    val sendImages by rememberUpdatedState(send)
-    LaunchedEffect(sending) {
-        if (!sending) return@LaunchedEffect
-        stage = Stage.Sending
-        result =
-            sendImages(
-                images,
-                note.text
-                    .toString()
-                    .trim()
-                    .ifEmpty { null },
-            )
-        when {
-            result.isComplete -> {
-                stage = Stage.Sent
+    LaunchedEffect(model) { model.resume(images, library) }
+    LaunchedEffect(stage) {
+        when (stage) {
+            Stage.Sent -> {
                 haptics.success(view)
                 delay(SENT_MILLIS)
                 sheetState.hide()
                 finish()
             }
 
-            // The images that were read are on their way, so the sheet says how
-            // many weren't rather than offering to send all of them again.
-            result.isPartial -> {
-                stage = Stage.Partial
+            Stage.Partial, Stage.Failed -> {
+                sheetState.show()
                 haptics.reject(view)
             }
 
-            else -> {
-                stage = Stage.Failed
-                haptics.reject(view)
-                sending = false
-            }
+            Stage.Sending, Stage.Editing -> {}
         }
     }
-    ModalBottomSheet(onDismissRequest = { if (stage != Stage.Sending) onFinish() }, sheetState = sheetState) {
+    ModalBottomSheet(onDismissRequest = { if (model.stage != Stage.Sending) onFinish() }, sheetState = sheetState) {
         Column(
             Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp).imePadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (!paired) {
+            if (server == null && stage == Stage.Editing) {
                 NotPaired(onOpenApp, onFinish)
                 return@Column
             }
@@ -154,7 +136,19 @@ fun ShareSheet(
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                                 TextButton(onClick = onFinish) { Text(stringResource(R.string.action_cancel)) }
-                                Button(onClick = { sending = true }) { Text(stringResource(R.string.share_send)) }
+                                Button(enabled = server != null, onClick = {
+                                    server?.let {
+                                        model.send(
+                                            images,
+                                            note.text
+                                                .toString()
+                                                .trim()
+                                                .ifEmpty { null },
+                                            it,
+                                            library,
+                                        )
+                                    }
+                                }) { Text(stringResource(R.string.share_send)) }
                             }
                         }
                     }
@@ -184,7 +178,7 @@ fun ShareSheet(
                     }
 
                     Stage.Partial -> {
-                        Partial(result, onFinish)
+                        Partial(model.result, onFinish)
                     }
                 }
             }

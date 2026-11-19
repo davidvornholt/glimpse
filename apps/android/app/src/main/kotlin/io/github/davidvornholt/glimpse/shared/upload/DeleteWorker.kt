@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.await
 import androidx.work.workDataOf
 import io.github.davidvornholt.glimpse.GlimpseApp
 import io.github.davidvornholt.glimpse.shared.api.ApiErrorTag
@@ -44,7 +45,7 @@ class DeleteScheduler(
                 .toSet()
         }
 
-    fun enqueue(
+    suspend fun enqueue(
         id: String,
         server: String,
     ) {
@@ -57,7 +58,7 @@ class DeleteScheduler(
                 .addTag(serverTag(server))
                 .addTag(PHOTO_TAG + id)
                 .build()
-        workManager.enqueueUniqueWork("delete-$server-$id", ExistingWorkPolicy.KEEP, request)
+        workManager.enqueueUniqueWork("delete-$server-$id", ExistingWorkPolicy.KEEP, request).await()
     }
 
     private fun serverTag(server: String) = "delete-server:" + PairingLink.normalizeServer(server, allowCleartext = true)

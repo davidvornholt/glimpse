@@ -43,7 +43,7 @@ class ServerListTest {
             empty.copy(ids = setOf(TEST_PHOTO_ID)).deletedAmong(listOf(uploaded), ask)
             // An agent can't see the photo yet, or its note hasn't gone out.
             empty.deletedAmong(listOf(uploaded.copy(previewSent = false, originalSent = false)), ask)
-            empty.deletedAmong(listOf(uploaded.copy(note = "Left one")), ask)
+            empty.deletedAmong(listOf(uploaded.withNote("Left one")), ask)
             assertEquals(emptyList(), asked)
 
             empty.deletedAmong(listOf(uploaded), ask)

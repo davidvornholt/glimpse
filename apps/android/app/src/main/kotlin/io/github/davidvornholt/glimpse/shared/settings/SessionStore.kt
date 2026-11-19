@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
+import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import io.github.davidvornholt.glimpse.shared.security.TokenCipher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +73,16 @@ class SessionStore(
     suspend fun current(): SessionState = storedState.first()
 
     suspend fun currentSession(): Session? = (current() as? SessionState.Paired)?.session
+
+    /**
+     * Whether the phone is paired with [server], read from the committed pairing even before its
+     * change has reached the UI flow. Pairing again with the same server keeps its photos.
+     */
+    suspend fun isCurrent(server: String): Boolean {
+        val prefs = store.data.first()
+        val current = prefs[SERVER]
+        return prefs[TOKEN] != null && current != null && PairingLink.sameServer(current, server)
+    }
 
     /** The server this phone was last paired with, even after it was removed. */
     suspend fun lastServer(): String? = store.data.first()[SERVER]

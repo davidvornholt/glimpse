@@ -50,19 +50,8 @@ class PairingClaimer(
         deviceName: String,
     ): Session {
         val result = anonymousApi(link.server).claim(link.code, deviceName.trim())
-        // Photos waiting for another server don't belong on this one.
-        val previous = sessions.lastServer()
-        if (previous != null) {
-            if (PairingLink.sameServer(previous, link.server)) {
-                // Before the new session is saved, so if the process dies here the next pairing renews the photos again.
-                library.prepareForNewDevice()
-            } else {
-                library.clear()
-            }
-        }
         val session = Session(link.server, result.token, result.device.id, result.device.name)
-        sessions.save(session)
-        library.resumeUploads()
+        library.changePairing(session)
         return session
     }
 
