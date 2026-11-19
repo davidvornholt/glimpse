@@ -39,7 +39,7 @@ printf %s "$token" | sha256sum | cut -d' ' -f1
 
 ## Storage
 
-Each photo is a directory under `photos/<id>/` holding `meta.json`, `preview.jpg`, and the original. Paired phones are in `devices.json`, which keeps only the SHA-256 of each phone's token. Every file is written to a temporary name and renamed, so a crash never leaves half a file in place. At start-up the server loads every photo, skips records it can't read with a warning, and deletes leftover drafts.
+Each photo is a directory under `photos/<id>/` holding `meta.json`, `preview.jpg`, and the original. Paired phones are in `devices.json`, which keeps only the SHA-256 of each phone's token. Every file is written to a temporary name and renamed, so a crash never leaves half a file in place. Only the server's own user can read what it keeps, whatever the umask: it makes directories `0700` and files `0600`, and at start-up it closes a data directory that other users can open, or stops if it can't. At start-up the server loads every photo, skips records it can't read with a warning, and deletes leftover drafts.
 
 ## Container image
 

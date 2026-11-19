@@ -1,6 +1,16 @@
 import { Effect, FileSystem, Option, Path, Stream } from 'effect';
 
 /**
+ * Photos, notes and the device list are private, so only the server's own
+ * user may read them. A mode given at creation can only lose bits to the
+ * umask, never gain them, so these hold under any umask.
+ */
+export const privateDirectoryMode = 0o700;
+export const privateFileMode = 0o600;
+// The low six bits of a mode are the group's and everyone else's access.
+const groupAndOtherSpan = 0o100;
+
+/**
  * File helpers bound to the platform's file system, so the stores that use
  * them need it only once, when they are built.
  */
@@ -16,8 +26,11 @@ export const makeDisk = Effect.gen(function* () {
     const draft = `${target}.${crypto.randomUUID()}.tmp`;
     return (
       typeof data === 'string'
-        ? fs.writeFileString(draft, data, { flag: 'wx' })
-        : fs.writeFile(draft, data, { flag: 'wx' })
+        ? fs.writeFileString(draft, data, {
+            flag: 'wx',
+            mode: privateFileMode,
+          })
+        : fs.writeFile(draft, data, { flag: 'wx', mode: privateFileMode })
     ).pipe(
       Effect.andThen(fs.rename(draft, target)),
       Effect.onError(() =>
@@ -32,13 +45,36 @@ export const makeDisk = Effect.gen(function* () {
     body: Stream.Stream<Uint8Array, E>,
   ) => {
     const draft = path.join(directory, `upload.${crypto.randomUUID()}.tmp`);
-    return Stream.run(body, fs.sink(draft, { flag: 'wx' })).pipe(
+    return Stream.run(
+      body,
+      fs.sink(draft, { flag: 'wx', mode: privateFileMode }),
+    ).pipe(
       Effect.onError(() =>
         fs.remove(draft, { force: true }).pipe(Effect.ignore),
       ),
       Effect.as(draft),
     );
   };
+
+  const makePrivateDirectory = (directory: string) =>
+    fs.makeDirectory(directory, {
+      recursive: true,
+      mode: privateDirectoryMode,
+    });
+
+  /**
+   * Makes the data directory, or closes one that an older server, which
+   * followed the umask, left readable by other users. Closing it hides
+   * everything inside, however open those files are themselves.
+   */
+  const makeDataDirectory = (directory: string) =>
+    Effect.gen(function* () {
+      yield* makePrivateDirectory(directory);
+      const { mode } = yield* fs.stat(directory);
+      if (mode % groupAndOtherSpan !== 0) {
+        yield* fs.chmod(directory, privateDirectoryMode);
+      }
+    });
 
   /** The first bytes of a file, enough to tell its type. */
   const readHead = (file: string, bytes: number) =>
@@ -67,6 +103,8 @@ export const makeDisk = Effect.gen(function* () {
   return {
     fs,
     path,
+    makePrivateDirectory,
+    makeDataDirectory,
     writeAtomically,
     streamToDraft,
     readHead,

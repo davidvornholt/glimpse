@@ -140,8 +140,8 @@ export const makeUploads = (state: PhotoState, retentionDays: number) => {
         createdAt: yield* DateTime.now,
         retentionDays,
       });
-      yield* disk.fs
-        .makeDirectory(files(photo).directory, { recursive: true })
+      yield* disk
+        .makePrivateDirectory(files(photo).directory)
         .pipe(Effect.orDie);
       yield* store(photo);
       return { photo: publicPhoto(photo), created: true };
