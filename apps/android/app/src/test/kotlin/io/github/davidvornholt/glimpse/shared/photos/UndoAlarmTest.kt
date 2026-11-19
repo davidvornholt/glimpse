@@ -16,7 +16,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/** The work that starts the app at an Undo deadline, queued in WorkManager's test database. */
 @RunWith(RobolectricTestRunner::class)
 // The test application, because Glimpse's own would build the whole app graph.
 @Config(sdk = [Config.NEWEST_SDK], application = android.app.Application::class)

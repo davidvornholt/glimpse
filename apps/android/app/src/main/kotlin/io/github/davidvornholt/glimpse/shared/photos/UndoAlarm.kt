@@ -10,7 +10,7 @@ import androidx.work.await
 import io.github.davidvornholt.glimpse.GlimpseApp
 import java.util.concurrent.TimeUnit
 
-/** Starts the app at an Undo deadline, so a delete reaches the server even when Android killed the app during Undo. */
+/** After Undo expires, WorkManager can finish the pending delete without the user reopening Glimpse. */
 class UndoAlarm(
     context: Context,
     private val now: () -> Long = System::currentTimeMillis,

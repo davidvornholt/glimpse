@@ -24,10 +24,7 @@ data class PendingDelete(
     val deadline: Long,
 )
 
-/**
- * The deadline and the decision survive the activity. A running process settles a delete at its deadline, and
- * [wake] has the system start one then if Android killed it, because a new process settles an overdue delete.
- */
+/** The deadline and the decision survive the activity. A running process settles a delete at its deadline. */
 class UndoDeletes(
     private val store: DataStore<Preferences>,
     scope: CoroutineScope,
