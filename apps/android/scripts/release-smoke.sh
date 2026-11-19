@@ -85,11 +85,19 @@ owner_get() {
   curl -fsS -H "Authorization: Bearer $owner" "$base$1"
 }
 
+adb wait-for-device
+until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 1; done
+# A Glimpse paired before reconnects to its old server instead of pairing with
+# this one.
+installed=$(adb shell pm list packages "$package" | tr -d '\r') || fail "couldn't list the installed apps"
+if grep -qx "package:$package" <<<"$installed"; then
+  fail "$package is already installed; run the test on a fresh emulator"
+fi
+
 # Adds the certificate to the system store of apps started from now on. Since
 # Android 14 that store comes from the Conscrypt APEX, so a copy of the store
 # with the certificate is mounted over both places, in this shell's mount
 # namespace and in those of the zygotes that start apps.
-adb wait-for-device
 adb root >/dev/null
 adb wait-for-device
 until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 1; done
