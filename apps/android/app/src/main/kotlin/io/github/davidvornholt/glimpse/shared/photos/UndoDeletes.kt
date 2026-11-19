@@ -77,7 +77,17 @@ class UndoDeletes(
 
     /** For the work [wake] scheduled: settles the pending delete once its deadline has passed. False when that failed. */
     suspend fun settleDue(): Boolean {
-        val item = saved.first() ?: return true
+        val item =
+            try {
+                // Under the lock, so a delete that start is still saving is seen. The lock is let go before the wait,
+                // so an Undo can still come first.
+                mutex.withLock { saved.first() } ?: return true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // As in settle, storage may have failed, so the work is tried again.
+                return false
+            }
         delay((item.deadline - now()).coerceAtLeast(0))
         return settle(item)
     }

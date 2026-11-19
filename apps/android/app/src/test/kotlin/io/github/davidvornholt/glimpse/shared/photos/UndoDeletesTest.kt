@@ -3,6 +3,7 @@ package io.github.davidvornholt.glimpse.shared.photos
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -10,7 +11,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -19,6 +23,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -197,11 +202,55 @@ class UndoDeletesTest {
             assertEquals(emptyList(), deleted)
         }
 
-    /** Fails every write while [full] is set, as a phone with no space left does. */
+    @Test
+    fun `a wake-up while a delete is still being saved sends it`() =
+        runTest {
+            val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
+            val deleted = mutableListOf<String>()
+            val woken = CompletableDeferred<Unit>()
+            // A cancelled scope never runs the app's own timer, so only the wake-up can send the delete.
+            val killed = CoroutineScope(Job().apply { cancel() })
+            val undo = UndoDeletes(store, killed, { testScheduler.currentTime }, { woken.await() }) { id, _ -> deleted.add(id) }
+            launch { undo.start("photo", server, 8000) }
+            runCurrent()
+            val due = async { undo.settleDue() }
+            advanceTimeBy(9000)
+            woken.complete(Unit)
+            runCurrent()
+            assertTrue(due.await())
+            assertEquals(listOf("photo"), deleted)
+        }
+
+    @Test
+    fun `a wake-up that can't read the pending delete is tried again`() =
+        runTest {
+            val store = FullStore(PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") })
+            val deleted = mutableListOf<String>()
+            val killed = CoroutineScope(Job().apply { cancel() })
+            val undo = UndoDeletes(store, killed, { testScheduler.currentTime }, {}) { id, _ -> deleted.add(id) }
+            undo.start("photo", server, 8000)
+            advanceTimeBy(9000)
+            store.failingReads = 1
+            assertFalse(undo.settleDue())
+            assertTrue(undo.settleDue())
+            assertEquals(listOf("photo"), deleted)
+        }
+
+    /** Fails every write while [full] is set, as a phone with no space left does, and the next [failingReads] reads. */
     private class FullStore(
         private val inner: DataStore<Preferences>,
     ) : DataStore<Preferences> by inner {
         var full = false
+        var failingReads = 0
+
+        override val data =
+            flow {
+                if (failingReads > 0) {
+                    failingReads--
+                    throw IOException("I/O error")
+                }
+                emitAll(inner.data)
+            }
 
         override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
             if (full) throw IOException("No space left on device")
