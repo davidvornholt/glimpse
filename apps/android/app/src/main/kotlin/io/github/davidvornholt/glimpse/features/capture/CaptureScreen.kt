@@ -144,6 +144,13 @@ fun CaptureScreen(
                 imageCaptureMode = ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
             }
         }
+    // Taking a photo before CameraX has started crashes, and a cold start from the shortcut takes a moment.
+    var cameraReady by remember { mutableStateOf(false) }
+    DisposableEffect(controller) {
+        val future = controller.initializationFuture
+        future.addListener({ cameraReady = runCatching { future.get() }.isSuccess }, ContextCompat.getMainExecutor(context))
+        onDispose {}
+    }
     LaunchedEffect(settings.flash) { controller.imageCaptureFlashMode = settings.flash.toCameraX() }
     var zoom by remember { mutableFloatStateOf(1f) }
     DisposableEffect(controller, lifecycleOwner) {
@@ -294,7 +301,7 @@ fun CaptureScreen(
                 Shutter(
                     mode = settings.mode,
                     onClick = { if (settings.mode == CaptureMode.Scan) scan() else takePhoto() },
-                    enabled = settings.mode == CaptureMode.Scan || cameraOn,
+                    enabled = settings.mode == CaptureMode.Scan || (cameraOn && cameraReady),
                 )
                 CameraButton(Icons.Rounded.EditNote, stringResource(R.string.capture_note), { noteSheetOpen = true }, large = true)
             }
