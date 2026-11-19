@@ -100,7 +100,6 @@ const hasPreview = (photo: StoredPhoto) => photo.previewBytes !== null;
 const hasOriginal = (photo: StoredPhoto) => photo.hasOriginal;
 
 /**
- * The photo, and whether [device] may write the image that [has] checks for.
  * A phone paired again comes back as a new device and carries on the uploads
  * its earlier device registered, so any phone may send an image the photo is
  * still missing. Only the phone that registered the photo may replace an image

@@ -162,7 +162,6 @@ class PairingBoundaryTest {
         assertEquals(0, kept.noteEdit)
     }
 
-    /** The one capture finished uploading under its own id, which the new device now owns, and the server has it once. */
     private fun assertFinished(note: String? = null) {
         val uploaded =
             captures.records.value.values
