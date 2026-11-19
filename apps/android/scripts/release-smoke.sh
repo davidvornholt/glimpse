@@ -19,13 +19,23 @@ here="$root/apps/android/scripts"
 out=${SMOKE_OUT:-$(mktemp -d)}
 mkdir -p "$out"
 work=$(mktemp -d)
+screen="$work/ui.xml"
 server_port=8797
 proxy_port=8443
 base="http://127.0.0.1:$server_port"
 owner=smoke-owner-token
 pids=()
 
+# Keeps the log, the last screen and the last UI dump of any failed run, also
+# one that a failing command or a timeout ended.
 cleanup() {
+  local status=$?
+  if [ "$status" != 0 ]; then
+    adb logcat -d >"$out/logcat.txt" 2>/dev/null || true
+    adb exec-out screencap -p >"$out/screen.png" 2>/dev/null || true
+    cp "$screen" "$out/ui.xml" 2>/dev/null || true
+    echo "release smoke test failed; logs and the last screen are in $out." >&2
+  fi
   for pid in "${pids[@]}"; do
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
@@ -33,12 +43,12 @@ cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
+# Without these, bash runs the exit trap with the last command's status.
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 fail() {
   echo "release smoke test: $*" >&2
-  adb logcat -d >"$out/logcat.txt" 2>/dev/null || true
-  adb exec-out screencap -p >"$out/screen.png" 2>/dev/null || true
-  echo "Logs and the last screen are in $out." >&2
   exit 1
 }
 
@@ -118,7 +128,6 @@ done
 adb logcat -c
 adb logcat -b crash -c
 
-screen="$work/ui.xml"
 dump() {
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || return 1
   adb exec-out cat /sdcard/ui.xml >"$screen"
@@ -151,7 +160,6 @@ wait_for() {
     if dump && [ -n "$(centre "$1" "${3:-}")" ]; then return 0; fi
     sleep 1
   done
-  cp "$screen" "$out/ui.xml" 2>/dev/null || true
   alive "while waiting for \"$1\""
   fail "\"$1\" didn't show${3:+ $3} within $seconds s"
 }
