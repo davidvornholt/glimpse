@@ -29,14 +29,14 @@ private data class ShareRequest(
 internal class ShareImport(
     private val saved: SavedStateHandle,
 ) : ViewModel() {
-    private var request = saved.get<String>("request")?.let { GlimpseJson.decodeFromString<ShareRequest>(it) }
+    private var request = (saved.get<Any>(REQUEST) as? String)?.let(::decode)
     private var job: Job? = null
-    var result by mutableStateOf(ImportResult(saved.get<Int>("added") ?: 0, request?.batch?.photoIds?.size ?: 0))
+    var result by mutableStateOf(ImportResult(saved.get<Any>(ADDED) as? Int ?: 0, request?.batch?.photoIds?.size ?: 0))
         private set
     var stage by mutableStateOf(
         when {
             request == null -> Stage.Editing
-            !saved.contains("added") -> Stage.Sending
+            !saved.contains(ADDED) -> Stage.Sending
             else -> outcome(result)
         },
     )
@@ -51,9 +51,9 @@ internal class ShareImport(
         if (stage != Stage.Editing && stage != Stage.Failed) return
         val next = ShareRequest(library.newBatch(images.size), server, note)
         request = next
-        saved["request"] = GlimpseJson.encodeToString(next)
-        saved.remove<Int>("added")
-        saved["completed"] = arrayListOf<String>()
+        saved[REQUEST] = GlimpseJson.encodeToString(next)
+        saved.remove<Int>(ADDED)
+        saved[COMPLETED] = arrayListOf<String>()
         stage = Stage.Sending
         resume(images, library)
     }
@@ -66,16 +66,25 @@ internal class ShareImport(
         if (stage != Stage.Sending || job?.isActive == true) return
         job =
             viewModelScope.launch {
-                val completed = saved.get<ArrayList<String>>("completed") ?: arrayListOf()
+                val completed = (saved.get<Any>(COMPLETED) as? List<*>).orEmpty().filterIsInstanceTo(arrayListOf<String>())
                 result =
                     library.addImages(images, PhotoSource.Share, current.note, current.batch, current.server, completed.toSet()) {
                         completed.add(it)
-                        saved["completed"] = completed
+                        saved[COMPLETED] = completed
                     }
-                saved["added"] = result.added
+                saved[ADDED] = result.added
                 stage = outcome(result)
             }
     }
+
+    /** A value that isn't one this screen saved means there is no import to resume. */
+    private fun decode(json: String): ShareRequest? =
+        try {
+            GlimpseJson.decodeFromString<ShareRequest>(json)
+        } catch (_: IllegalArgumentException) {
+            // SerializationException is one.
+            null
+        }
 
     private fun outcome(result: ImportResult) =
         when {
@@ -83,4 +92,11 @@ internal class ShareImport(
             result.isPartial -> Stage.Partial
             else -> Stage.Failed
         }
+
+    private companion object {
+        // The share intent's extras seed the saved state, so the keys are ones no sending app uses.
+        const val REQUEST = "io.github.davidvornholt.glimpse.share.request"
+        const val ADDED = "io.github.davidvornholt.glimpse.share.added"
+        const val COMPLETED = "io.github.davidvornholt.glimpse.share.completed"
+    }
 }
