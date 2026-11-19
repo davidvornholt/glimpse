@@ -345,7 +345,20 @@ describe('starting up', () => {
       expect((await get(`/v1/photos/${healthy}`)).status).toBe(200);
       expect((await get(`/v1/photos/${unreadable}`)).status).toBe(404);
     } finally {
-      // Lets the test's data be deleted, however the test went.
+      await chmod(folder, 0o700);
+    }
+  });
+
+  it('serves a photo whose cut-off upload it cannot clear away', async () => {
+    const id = testPhotoId(1);
+    await sendPhoto(server, phone, id);
+    const folder = join(server.dataDirectory, 'photos', id);
+    await writeFile(join(folder, 'original.tmp'), '');
+    await chmod(folder, 0o500);
+    try {
+      await restart();
+      expect((await get(`/v1/photos/${id}`)).status).toBe(200);
+    } finally {
       await chmod(folder, 0o700);
     }
   });

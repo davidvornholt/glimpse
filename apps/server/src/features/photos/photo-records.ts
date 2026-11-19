@@ -112,9 +112,20 @@ export const loadPhotos = Effect.fn('loadPhotos')(function* (root: string) {
       const drafts = (yield* fs.readDirectory(directory)).filter((entry) =>
         entry.endsWith('.tmp'),
       );
+      // A draft left behind is harmless, so one that can't go doesn't hide
+      // the photo.
       yield* Effect.forEach(
         drafts,
-        (draft) => fs.remove(path.join(directory, draft), { force: true }),
+        (draft) =>
+          fs
+            .remove(path.join(directory, draft), { force: true })
+            .pipe(
+              Effect.catch((error) =>
+                Effect.logWarning(
+                  `Keeping a cut-off upload in ${directory}: ${error.message}`,
+                ),
+              ),
+            ),
         { discard: true },
       );
       const photo = yield* fs
@@ -122,8 +133,6 @@ export const loadPhotos = Effect.fn('loadPhotos')(function* (root: string) {
         .pipe(Effect.flatMap(decode));
       return photo.id === name ? Option.some(photo) : Option.none();
     }).pipe(
-      // Anything wrong with one photo, such as a folder restored with the
-      // wrong owner, skips that photo rather than stopping the server.
       Effect.catch((error) =>
         Effect.logWarning(`Skipping ${directory}: ${error.message}`).pipe(
           Effect.as(Option.none<StoredPhoto>()),
