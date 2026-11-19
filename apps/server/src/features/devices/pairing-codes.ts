@@ -1,21 +1,22 @@
-import { NotFound, RateLimited } from '@glimpse/api/errors';
+import { NotFound } from '@glimpse/api/errors';
 import { DateTime, Effect, Ref } from 'effect';
 import { newPairingCode, tokenDigest } from '../../shared/tokens.ts';
 
-export const pairingMinutes = 10;
-/** Wrong codes allowed within the pairing window before claims pause. */
-export const failedClaimLimit = 10;
+const pairingMinutes = 10;
 const minuteMillis = 60_000;
 const pairingMillis = pairingMinutes * minuteMillis;
 
 /**
  * The codes on offer, which live only in memory: a code is good for one
  * claim within ten minutes, and a restart forgets them all.
+ *
+ * Wrong claims aren't limited. A code has 120 random bits, so guessing one
+ * within its ten minutes is hopeless at any request rate, and a limit shared
+ * by every caller would only let one caller lock every phone out of pairing.
  */
 export const makePairingCodes = Effect.gen(function* () {
   // Digests of the codes on offer, with when each stops working.
   const offered = yield* Ref.make(new Map<string, number>());
-  const failures = yield* Ref.make<ReadonlyArray<number>>([]);
   const nowMillis = DateTime.now.pipe(Effect.map(DateTime.toEpochMillis));
 
   const offer = Effect.gen(function* () {
@@ -33,14 +34,6 @@ export const makePairingCodes = Effect.gen(function* () {
   const redeem = (code: string) =>
     Effect.gen(function* () {
       const now = yield* nowMillis;
-      const recent = (yield* Ref.get(failures)).filter(
-        (time) => time > now - pairingMillis,
-      );
-      if (recent.length >= failedClaimLimit) {
-        return yield* new RateLimited({
-          message: `Too many wrong pairing codes. Wait ${pairingMinutes} minutes, then make a new code with \`glimpse pair\`.`,
-        });
-      }
       const digest = tokenDigest(code.trim().toUpperCase());
       const expires = yield* Ref.modify(offered, (current) => {
         const next = new Map(current);
@@ -48,7 +41,6 @@ export const makePairingCodes = Effect.gen(function* () {
         return [current.get(digest), next];
       });
       if (expires === undefined || expires <= now) {
-        yield* Ref.set(failures, [...recent, now]);
         return yield* new NotFound({
           message:
             'This pairing code is unknown, used, or expired. Make a new one with `glimpse pair`.',

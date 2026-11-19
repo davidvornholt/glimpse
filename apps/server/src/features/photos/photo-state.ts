@@ -25,6 +25,7 @@ export const makePhotoState = Effect.gen(function* () {
   const bus = yield* EventBus;
   const disk = yield* makeDisk;
   const root = disk.path.join(dataDirectory, 'photos');
+  yield* disk.makeDataDirectory(dataDirectory).pipe(Effect.orDie);
   const photos = yield* Ref.make(yield* loadPhotos(root).pipe(Effect.orDie));
   const lock = yield* Semaphore.make(1);
   const encodeMeta = Schema.encodeEffect(MetaFileSchema);

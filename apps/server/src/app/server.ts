@@ -1,6 +1,6 @@
 import { GlimpseApi } from '@glimpse/api/api';
-import { Effect, Layer } from 'effect';
-import { HttpRouter } from 'effect/http';
+import { ByteSize, Effect, Layer } from 'effect';
+import { HttpRouter, HttpServerRequest } from 'effect/http';
 import { HttpApiBuilder } from 'effect/http-api';
 import { AuthorizationLive } from '../features/devices/authorization.ts';
 import { DeviceStore } from '../features/devices/device-store.ts';
@@ -49,10 +49,28 @@ const ErrorEnvelopeLive = HttpRouter.middleware((app) => errorEnvelope(app), {
   global: true,
 });
 
+/**
+ * The largest body a JSON route reads, well above the longest note. Without
+ * it Effect reads any body whole, up to Bun's 128 MiB, before it decodes it.
+ * The image routes stream their bodies under their own limits instead.
+ */
+export const maxJsonBodyBytes = 65_536;
+
+const JsonBodyLimitLive = HttpRouter.middleware(
+  (app) =>
+    Effect.provideService(
+      app,
+      HttpServerRequest.MaxBodySize,
+      ByteSize.bytes(maxJsonBodyBytes),
+    ),
+  { global: true },
+);
+
 export const appLayer = <E>(config: Layer.Layer<ServerConfig, E>) =>
   Layer.mergeAll(
     HttpApiBuilder.layer(GlimpseApi),
     ErrorEnvelopeLive,
+    JsonBodyLimitLive,
     RetentionLive,
   ).pipe(Layer.provide(Handlers), Layer.provide(Stores), Layer.provide(config));
 

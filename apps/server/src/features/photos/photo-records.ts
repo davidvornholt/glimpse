@@ -5,6 +5,7 @@ import {
   PhotoSchema,
 } from '@glimpse/api/photo';
 import { DateTime, Effect, FileSystem, Option, Path, Schema } from 'effect';
+import { privateDirectoryMode } from '../../shared/files.ts';
 
 /** A photo as kept in `photos/<id>/meta.json`, with the phone that sent it. */
 export const StoredPhotoSchema = Schema.Struct({
@@ -100,7 +101,10 @@ export const isOlderThanCursor = (
 export const loadPhotos = Effect.fn('loadPhotos')(function* (root: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  yield* fs.makeDirectory(root, { recursive: true });
+  yield* fs.makeDirectory(root, {
+    recursive: true,
+    mode: privateDirectoryMode,
+  });
   const decode = Schema.decodeEffect(MetaFileSchema);
 
   const loadOne = (name: string) =>

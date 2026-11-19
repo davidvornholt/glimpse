@@ -1,5 +1,4 @@
 import { type Device, DeviceSchema } from '@glimpse/api/device';
-import type { RateLimited } from '@glimpse/api/errors';
 import { NotFound } from '@glimpse/api/errors';
 import {
   Context,
@@ -57,7 +56,7 @@ export class DeviceStore extends Context.Service<
       name: string,
     ) => Effect.Effect<
       { readonly token: string; readonly device: Device },
-      NotFound | RateLimited
+      NotFound
     >;
     readonly remove: (id: string) => Effect.Effect<void, NotFound>;
   }
@@ -68,9 +67,7 @@ export class DeviceStore extends Context.Service<
       const { dataDirectory } = yield* ServerConfig;
       const removals = yield* DeviceRemovals;
       const disk = yield* makeDisk;
-      yield* disk.fs
-        .makeDirectory(dataDirectory, { recursive: true })
-        .pipe(Effect.orDie);
+      yield* disk.makeDataDirectory(dataDirectory).pipe(Effect.orDie);
       const file = disk.path.join(dataDirectory, 'devices.json');
       const decode = Schema.decodeEffect(DevicesFileSchema);
       const encode = Schema.encodeEffect(DevicesFileSchema);
