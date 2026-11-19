@@ -176,10 +176,14 @@ fun CaptureScreen(
         rememberDocumentScanner(
             onPages = { pages ->
                 appScope.launch {
-                    val result = library.addImages(pages, PhotoSource.Scan, settingsStore.takePendingNote())
-                    when {
-                        result.isPartial -> snackbar.showSnackbar(messages.scanPartial(result.added, result.total))
-                        !result.isComplete -> snackbar.showSnackbar(messages.scanFailed)
+                    try {
+                        val result = library.addImages(pages, PhotoSource.Scan, settingsStore.takePendingNote())
+                        when {
+                            result.isPartial -> snackbar.showSnackbar(messages.scanPartial(result.added, result.total))
+                            !result.isComplete -> snackbar.showSnackbar(messages.scanFailed)
+                        }
+                    } catch (_: IOException) {
+                        snackbar.showSnackbar(messages.scanFailed)
                     }
                 }
             },
