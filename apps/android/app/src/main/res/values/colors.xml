@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FF3B37B0</color>
-    <color name="shortcut_background">#FFE6E3FF</color>
-    <color name="shortcut_foreground">#FF2A2675</color>
+    <!-- Tomato: a warm color that stands out among Pixel's white and blue
+         icons and on the black splash screen. The icon stays flat, with no
+         gradients or highlights, so it holds up at every size. -->
+    <color name="ic_launcher_background">#FFEE5A36</color>
+    <color name="shortcut_background">#FFFFE6DC</color>
+    <color name="shortcut_foreground">#FF8A2A12</color>
     <color name="viewfinder">#FF000000</color>
 </resources>
