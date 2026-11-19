@@ -1,10 +1,5 @@
 import type { Device } from '@glimpse/api/device';
-import {
-  Conflict,
-  Forbidden,
-  InvalidRequest,
-  TooLarge,
-} from '@glimpse/api/errors';
+import { Conflict, InvalidRequest, TooLarge } from '@glimpse/api/errors';
 import { maxPreviewEdge, type PhotoMetadata } from '@glimpse/api/photo';
 import { DateTime, Effect, Option, Stream } from 'effect';
 import type { HttpApiError } from 'effect/http-api';
@@ -101,6 +96,32 @@ const newPhoto = ({
   deviceId: device.id,
 });
 
+const hasPreview = (photo: StoredPhoto) => photo.previewBytes !== null;
+const hasOriginal = (photo: StoredPhoto) => photo.hasOriginal;
+
+/**
+ * The photo, and whether [device] may write the image that [has] checks for.
+ * A phone paired again comes back as a new device and carries on the uploads
+ * its earlier device registered, so any phone may send an image the photo is
+ * still missing, and the photo becomes that phone's. Only the photo's own
+ * phone may replace an image it already has; for another phone the photo is
+ * answered as it is.
+ */
+const sendingTo = (
+  photo: StoredPhoto,
+  device: Device,
+  has: (photo: StoredPhoto) => boolean,
+) => {
+  if (photo.deviceId === device.id) {
+    return { photo, send: true };
+  }
+  if (has(photo)) {
+    return { photo, send: false };
+  }
+  const taken = { ...photo, deviceId: device.id, deviceName: device.name };
+  return { photo: taken, send: true };
+};
+
 /**
  * How a phone sends a photo: it registers the photo's details under an id it
  * made, then sends the preview, which makes the photo ready, and then the
@@ -109,25 +130,19 @@ const newPhoto = ({
 export const makeUploads = (state: PhotoState, retentionDays: number) => {
   const { disk, files, find, store, nextReadyAt, lock } = state;
 
-  const uploadable = (id: string, device: Device) =>
-    find(id).pipe(
-      Effect.filterOrFail(
-        (photo) => photo.deviceId === device.id,
-        () =>
-          new Forbidden({
-            message: `Photo ${id} was registered by another phone.`,
-          }),
-      ),
-    );
+  const sendable = (
+    id: string,
+    device: Device,
+    has: (photo: StoredPhoto) => boolean,
+  ) => find(id).pipe(Effect.map((photo) => sendingTo(photo, device, has)));
 
   const register = (id: string, metadata: PhotoMetadata, device: Device) =>
     Effect.gen(function* () {
       const existing = yield* find(id).pipe(Effect.option);
       if (Option.isSome(existing)) {
-        const same =
-          existing.value.deviceId === device.id &&
-          sameRegistration(existing.value, metadata);
-        return same
+        // Any phone, so one paired again under a new device can repeat a
+        // registration whose answer its earlier device didn't get.
+        return sameRegistration(existing.value, metadata)
           ? { photo: publicPhoto(existing.value), created: false }
           : yield* new Conflict({
               message: `Photo ${id} already exists with other details. Use a new id.`,
@@ -149,10 +164,13 @@ export const makeUploads = (state: PhotoState, retentionDays: number) => {
 
   const putPreview = (id: string, device: Device, body: Upload) =>
     Effect.gen(function* () {
-      yield* uploadable(id, device);
+      yield* find(id);
       const bytes = yield* cleanPreview(yield* collect(body));
       return yield* Effect.gen(function* () {
-        const photo = yield* uploadable(id, device);
+        const { photo, send } = yield* sendable(id, device, hasPreview);
+        if (!send) {
+          return publicPhoto(photo);
+        }
         yield* disk
           .writeAtomically(files(photo).preview, bytes)
           .pipe(Effect.orDie);
@@ -168,7 +186,10 @@ export const makeUploads = (state: PhotoState, retentionDays: number) => {
   /** Moves a checked draft into place as the photo's original. */
   const keepOriginal = (id: string, device: Device, draft: string) =>
     Effect.gen(function* () {
-      const photo = yield* uploadable(id, device);
+      const { photo, send } = yield* sendable(id, device, hasOriginal);
+      if (!send) {
+        return publicPhoto(photo);
+      }
       const head = yield* disk.readHead(draft, headBytes).pipe(Effect.orDie);
       if (!looksLike(photo.originalType, head)) {
         return yield* new InvalidRequest({
@@ -192,7 +213,7 @@ export const makeUploads = (state: PhotoState, retentionDays: number) => {
     body: Upload,
   ) =>
     Effect.gen(function* () {
-      const registered = yield* uploadable(id, device);
+      const registered = yield* find(id);
       if (contentType !== registered.originalType) {
         return yield* new InvalidRequest({
           message: `Photo ${id} was registered as ${registered.originalType}, not ${contentType}.`,
