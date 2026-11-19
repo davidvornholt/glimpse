@@ -100,7 +100,12 @@ class UndoDeletes(
         try {
             val previous = saved.first()
             if (previous?.id == id) return@withLock
-            if (previous != null) delete(previous.id, previous.server)
+            if (previous != null) {
+                delete(previous.id, previous.server)
+                // Cleared at once, so the earlier photo can't be undone after its delete is queued, even if the new
+                // one then fails to start.
+                store.edit { it.clear() }
+            }
             val started = now()
             val deadline = started + timeout.coerceAtMost(Long.MAX_VALUE - started)
             // Scheduled before it is saved, so a process that dies right after still wakes for it.

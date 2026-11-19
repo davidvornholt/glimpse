@@ -126,7 +126,8 @@ class UndoDeletesTest {
             val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }, {}) { id, _ -> deleted.add(id) }
             undo.start("first", server, 8000)
             store.full = true
-            // The first delete goes, but the phone can't save the second.
+            // The first delete goes, but the phone can't record that or save the second, so the first goes again at its
+            // deadline.
             undo.start("second", server, 8000)
             runCurrent()
             assertEquals(listOf("first"), deleted)
@@ -136,6 +137,25 @@ class UndoDeletesTest {
             runCurrent()
             assertNull(undo.pending.value)
             assertEquals(listOf("first", "first"), deleted)
+        }
+
+    @Test
+    fun `a delete that is already queued can't be undone when the next can't start`() =
+        runTest {
+            val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
+            val deleted = mutableListOf<String>()
+            var wakeFails = false
+            val wake: suspend (Long) -> Unit = { if (wakeFails) throw IOException("No space left on device") }
+            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }, wake) { id, _ -> deleted.add(id) }
+            undo.start("first", server, 8000)
+            wakeFails = true
+            undo.start("second", server, 8000)
+            assertNull(undo.current())
+            undo.undo("first")
+            advanceTimeBy(8001)
+            runCurrent()
+            assertEquals(listOf("first"), deleted)
+            assertNull(undo.current())
         }
 
     @Test
