@@ -189,8 +189,22 @@ alive 'after taking a photo'
 tap 'Scan'
 tap 'Scan document'
 # The scanner is Google Play services' own screen, or the app says it isn't
-# installed yet; either way the app has to keep running.
-sleep 10
+# ready yet; either shows that the code starting it ran. The message goes
+# after 4 s, so the loop doesn't sleep between looks.
+scanner=
+deadline=$((SECONDS + 30))
+while [ -z "$scanner" ] && [ "$SECONDS" -lt "$deadline" ]; do
+  resumed=$(adb shell dumpsys activity activities | grep ResumedActivity || true)
+  case $resumed in
+    *' com.google.android.gms/'*) scanner=open ;;
+    *) if dump && grep -Fq 'text="The document scanner isn' "$screen"; then scanner='not ready'; fi ;;
+  esac
+done
+if [ -z "$scanner" ]; then
+  alive 'while waiting for the document scanner'
+  fail "neither the document scanner nor the message that it isn't ready showed within 30 s"
+fi
+echo "document scanner: $scanner"
 alive 'after opening the document scanner'
 
 echo 'release smoke test passed'
