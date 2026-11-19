@@ -100,6 +100,7 @@ class PairingBoundaryTest {
             PhotoLibrary(
                 captures,
                 PreferenceDataStoreFactory.create(scope = backgroundScope) { File(root, "undo.preferences_pb") },
+                mock(),
                 uploads,
                 deletes,
                 feed,

@@ -67,9 +67,7 @@ export class DeviceStore extends Context.Service<
       const { dataDirectory } = yield* ServerConfig;
       const removals = yield* DeviceRemovals;
       const disk = yield* makeDisk;
-      yield* disk.fs
-        .makeDirectory(dataDirectory, { recursive: true })
-        .pipe(Effect.orDie);
+      yield* disk.makeDataDirectory(dataDirectory).pipe(Effect.orDie);
       const file = disk.path.join(dataDirectory, 'devices.json');
       const decode = Schema.decodeEffect(DevicesFileSchema);
       const encode = Schema.encodeEffect(DevicesFileSchema);

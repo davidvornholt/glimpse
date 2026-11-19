@@ -61,6 +61,7 @@ private data class PendingCapture(
 class PhotoLibrary(
     private val captures: CaptureStore,
     undoStore: DataStore<Preferences>,
+    undoAlarm: UndoAlarm,
     private val uploads: UploadScheduler,
     private val deletes: DeleteScheduler,
     private val feed: PhotoFeed,
@@ -80,7 +81,7 @@ class PhotoLibrary(
     private val pending = MutableStateFlow<Map<String, PendingCapture>>(emptyMap())
     private val hidden = MutableStateFlow<Set<String>>(emptySet())
 
-    val undo = UndoDeletes(undoStore, scope, System::currentTimeMillis, ::delete)
+    val undo = UndoDeletes(undoStore, scope, System::currentTimeMillis, undoAlarm::wakeAt, ::delete)
 
     /** The photos waiting for an undo, and those whose delete hasn't reached the server yet. */
     private val hiddenOrDeleting =
