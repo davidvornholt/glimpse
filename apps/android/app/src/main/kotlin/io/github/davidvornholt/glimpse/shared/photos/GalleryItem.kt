@@ -7,7 +7,6 @@ import io.github.davidvornholt.glimpse.shared.ulid.UlidGenerator
 import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
 import io.github.davidvornholt.glimpse.shared.upload.UploadFailure
 import io.github.davidvornholt.glimpse.shared.upload.UploadProgress
-import java.time.Duration
 import java.time.Instant
 
 /** Where a photo's upload stands, as the filmstrip and the inbox show it. */
@@ -53,28 +52,6 @@ data class GalleryItem(
     val isViewed: Boolean get() = viewedAt != null
 
     companion object {
-        /** How far the phone's clock may be from the server's when it asks for the photos since a time. */
-        private val CLOCK_MARGIN: Duration = Duration.ofDays(1)
-
-        /**
-         * Whether someone deleted the photo [record] uploaded on the server, with
-         * `glimpse delete` or from another phone, or it expired there. Either the
-         * upload met the deletion, or a complete list of the server's photos
-         * since [listedSince] lacks a photo an agent could already see.
-         */
-        fun isDeletedOnServer(
-            record: CaptureRecord,
-            remote: Photo?,
-            listedSince: Instant?,
-        ): Boolean =
-            record.deletedOnServer ||
-                (
-                    remote == null &&
-                        record.isReady &&
-                        listedSince != null &&
-                        Instant.ofEpochMilli(UlidGenerator.timeOf(record.id)).isAfter(listedSince + CLOCK_MARGIN)
-                )
-
         fun merge(
             id: String,
             record: CaptureRecord?,

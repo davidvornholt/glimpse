@@ -11,6 +11,7 @@ import io.github.davidvornholt.glimpse.shared.settings.SessionStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,7 +41,8 @@ class PhotoFeed(
     private val all = MutableStateFlow<Map<String, Photo>>(emptyMap())
     private val waitingCount = MutableStateFlow(0)
     private val state = MutableStateFlow(Connection.Offline)
-    private val complete = MutableStateFlow<Instant?>(null)
+    private val listed = MutableSharedFlow<ServerList>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private val removed = MutableSharedFlow<String>(extraBufferCapacity = 64)
     private val newlyViewed = MutableSharedFlow<String>(extraBufferCapacity = 16)
     private var job: Job? = null
 
@@ -51,11 +53,11 @@ class PhotoFeed(
 
     val connection: StateFlow<Connection> = state.asStateFlow()
 
-    /**
-     * While the stream is live, the time since which [photos] holds every photo
-     * on the server; null when it may have missed a change.
-     */
-    val listedSince: StateFlow<Instant?> = complete.asStateFlow()
+    /** Each complete list of the server's photos, fetched as the stream (re)opens. */
+    val lists: SharedFlow<ServerList> = listed.asSharedFlow()
+
+    /** The id of each photo deleted on the server while the stream is live. */
+    val deleted: SharedFlow<String> = removed.asSharedFlow()
 
     /** The id of each photo the moment an agent first looks at it. */
     val viewed: SharedFlow<String> = newlyViewed.asSharedFlow()
@@ -69,7 +71,6 @@ class PhotoFeed(
         job?.cancel()
         job = null
         state.value = Connection.Offline
-        complete.value = null
         waitingCount.value = 0
     }
 
@@ -77,7 +78,6 @@ class PhotoFeed(
         sessions.state.collectLatest { session ->
             if (session !is SessionState.Paired) {
                 all.value = emptyMap()
-                complete.value = null
                 waitingCount.value = 0
                 state.value = Connection.Offline
                 return@collectLatest
@@ -86,14 +86,13 @@ class PhotoFeed(
             var backoff = FIRST_BACKOFF
             while (true) {
                 state.value = Connection.Connecting
-                complete.value = null
                 try {
                     api.events().collect { event ->
                         when (event) {
                             ServerEvent.Connected -> {
                                 state.value = Connection.Live
                                 backoff = FIRST_BACKOFF
-                                load(api)
+                                load(api, session.session)
                             }
 
                             is ServerEvent.PhotoChanged -> {
@@ -102,6 +101,7 @@ class PhotoFeed(
 
                             is ServerEvent.PhotoDeleted -> {
                                 forget(event.id)
+                                removed.tryEmit(event.id)
                             }
 
                             is ServerEvent.Waiting -> {
@@ -120,7 +120,6 @@ class PhotoFeed(
                     // Offline or the server restarted; try again after a pause.
                 }
                 state.value = Connection.Offline
-                complete.value = null
                 waitingCount.value = 0
                 delay(backoff.toMillis())
                 backoff = minOf(backoff.multipliedBy(2), MAX_BACKOFF)
@@ -128,7 +127,10 @@ class PhotoFeed(
         }
     }
 
-    private suspend fun load(api: GlimpseApi) {
+    private suspend fun load(
+        api: GlimpseApi,
+        session: Session,
+    ) {
         val since = Instant.now().minus(WINDOW)
         val photos = mutableListOf<Photo>()
         var cursor: String? = null
@@ -138,7 +140,7 @@ class PhotoFeed(
             cursor = page.nextCursor
         } while (cursor != null && photos.size < MAX_PHOTOS)
         all.value = photos.associateBy { it.id }
-        complete.value = since.takeIf { cursor == null }
+        if (cursor == null) listed.tryEmit(ServerList(session, photos.mapTo(HashSet()) { it.id }, since))
     }
 
     fun upsert(photo: Photo) {
