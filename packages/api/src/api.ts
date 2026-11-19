@@ -19,7 +19,6 @@ import {
   ForbiddenBody,
   InvalidRequestBody,
   NotFoundBody,
-  RateLimitedBody,
   TooLargeBody,
 } from './errors/api-errors.ts';
 import { EventSchema, keepAliveSeconds } from './events.ts';
@@ -67,7 +66,7 @@ export const PairingApi = HttpApiGroup.make('pairing')
     HttpApiEndpoint.post('claim', '/pairings/claim', {
       payload: ClaimPayloadSchema,
       success: ClaimResultSchema.pipe(HttpApiSchema.status(created)),
-      error: [InvalidRequestBody, NotFoundBody, RateLimitedBody],
+      error: [InvalidRequestBody, NotFoundBody, TooLargeBody],
     }),
   )
   .prefix('/v1');
@@ -111,7 +110,7 @@ export const PhotosApi = HttpApiGroup.make('photos')
       params: photoParams,
       payload: PhotoMetadataSchema,
       success: [PhotoSchema, PhotoSchema.pipe(HttpApiSchema.status(created))],
-      error: [ForbiddenBody, ConflictBody, InvalidRequestBody],
+      error: [ForbiddenBody, ConflictBody, InvalidRequestBody, TooLargeBody],
     }),
     /** A JPEG of at most 2048 px on its longest edge. It makes the photo ready. */
     HttpApiEndpoint.put('putPreview', '/photos/:id/preview', {
@@ -137,7 +136,7 @@ export const PhotosApi = HttpApiGroup.make('photos')
       params: photoParams,
       payload: NotePatchSchema,
       success: PhotoSchema,
-      error: [NotFoundBody, InvalidRequestBody],
+      error: [NotFoundBody, InvalidRequestBody, TooLargeBody],
     }),
     /** Ready photos, the newest to arrive first. */
     HttpApiEndpoint.get('list', '/photos', {

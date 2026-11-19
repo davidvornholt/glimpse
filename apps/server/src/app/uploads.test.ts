@@ -4,6 +4,7 @@ import { Authorization } from '@glimpse/api/authorization';
 import { DateTime, Effect } from 'effect';
 import { FetchHttpClient, HttpClientRequest } from 'effect/http';
 import { HttpApiClient, HttpApiMiddleware } from 'effect/http-api';
+import { maxJsonBodyBytes } from './server.ts';
 import {
   bearer,
   decodePhoto,
@@ -251,6 +252,16 @@ describe('sending the original', () => {
     expect(download.headers.get('content-type')).toBe('image/jpeg');
     expect(download.headers.get('cache-control')).toContain('private');
     expect(new Uint8Array(await download.arrayBuffer())).toEqual(original);
+  });
+
+  it('takes one far larger than a JSON body may be', async () => {
+    await registerPhoto(server, phone, id);
+    await putPreview(server, phone, id);
+    const large = new Uint8Array(16 * maxJsonBodyBytes);
+    large.set(original);
+    const response = await putOriginal(large, 'image/jpeg');
+    expect(response.status).toBe(200);
+    expect(decodePhoto(await response.json()).originalBytes).toBe(large.length);
   });
 
   it('must have the type the photo was registered with', async () => {

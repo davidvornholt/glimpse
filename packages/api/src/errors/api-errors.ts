@@ -76,12 +76,6 @@ export class TooLarge extends Schema.TaggedError<TooLarge>()(
   { httpApiStatus: 413 },
 ) {}
 
-export class RateLimited extends Schema.TaggedError<RateLimited>()(
-  'RateLimited',
-  { message: Schema.String },
-  { httpApiStatus: 429 },
-) {}
-
 /** Anything unexpected. The details stay in the server's log. */
 export class ServerError extends Schema.TaggedError<ServerError>()(
   'ServerError',
@@ -95,7 +89,6 @@ export const ForbiddenBody = onTheWire('Forbidden', Forbidden);
 export const NotFoundBody = onTheWire('NotFound', NotFound);
 export const ConflictBody = onTheWire('Conflict', Conflict);
 export const TooLargeBody = onTheWire('TooLarge', TooLarge);
-export const RateLimitedBody = onTheWire('RateLimited', RateLimited);
 export const ServerErrorBody = onTheWire('ServerError', ServerError);
 
 export type ApiError =
@@ -105,5 +98,4 @@ export type ApiError =
   | NotFound
   | Conflict
   | TooLarge
-  | RateLimited
   | ServerError;

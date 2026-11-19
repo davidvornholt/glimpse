@@ -78,7 +78,7 @@ class UploadPlanTest {
     fun `waits when the network or the server is down`() {
         assertEquals(UploadPlan.Decision.RetryLater, failed(UploadStep.Preview, IOException("Connection reset")))
         assertEquals(UploadPlan.Decision.RetryLater, failed(UploadStep.Preview, api(503, ApiErrorTag.ServerError)))
-        assertEquals(UploadPlan.Decision.RetryLater, failed(UploadStep.Register, api(429, ApiErrorTag.RateLimited)))
+        assertEquals(UploadPlan.Decision.RetryLater, failed(UploadStep.Register, api(429, ApiErrorTag.Unknown)))
         assertEquals(UploadPlan.Decision.RetryLater, failed(UploadStep.Original, api(408, ApiErrorTag.Unknown)))
     }
 

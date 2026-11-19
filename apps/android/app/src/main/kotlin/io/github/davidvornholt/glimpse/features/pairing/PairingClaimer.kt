@@ -14,9 +14,6 @@ enum class PairingFailure {
     /** The code ran out or another phone used it first. */
     CodeExpired,
 
-    /** The server stopped taking codes for a while. */
-    TooManyTries,
-
     /** The server refused the device name or the code's format. */
     Rejected,
 
@@ -61,7 +58,6 @@ class PairingClaimer(
                 is ApiException -> {
                     when (error.tag) {
                         ApiErrorTag.NotFound -> PairingFailure.CodeExpired
-                        ApiErrorTag.RateLimited -> PairingFailure.TooManyTries
                         ApiErrorTag.InvalidRequest -> PairingFailure.Rejected
                         else -> PairingFailure.Unknown
                     }

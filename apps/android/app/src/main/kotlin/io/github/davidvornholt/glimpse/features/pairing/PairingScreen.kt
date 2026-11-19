@@ -207,7 +207,7 @@ internal fun PairingScreen(
                         step = shown,
                         onRetry = {
                             // A used-up code needs a new one; otherwise the same link may work now.
-                            val needsNewCode = shown.failure == PairingFailure.CodeExpired || shown.failure == PairingFailure.TooManyTries
+                            val needsNewCode = shown.failure == PairingFailure.CodeExpired
                             flow.step = if (needsNewCode) Step.Welcome else Step.Confirming(shown.link)
                         },
                         onCancel =
@@ -491,7 +491,6 @@ private fun Failed(
     val message =
         when (step.failure) {
             PairingFailure.CodeExpired -> stringResource(R.string.pairing_failed_expired)
-            PairingFailure.TooManyTries -> stringResource(R.string.pairing_failed_tries)
             PairingFailure.Rejected -> stringResource(R.string.pairing_failed_rejected)
             PairingFailure.Unreachable -> stringResource(R.string.pairing_failed_unreachable, step.link.host)
             PairingFailure.LocalNetworkDenied -> stringResource(R.string.pairing_failed_local_network, step.link.host)

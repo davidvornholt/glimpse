@@ -141,7 +141,6 @@
     <string name="pairing_claiming">Wird mit %1$s gekoppelt …</string>
     <string name="pairing_failed_title">Kopplung fehlgeschlagen</string>
     <string name="pairing_failed_expired">Der Code ist abgelaufen oder wurde schon benutzt. Führe glimpse pair noch einmal aus, um einen neuen zu bekommen.</string>
-    <string name="pairing_failed_tries">Zu viele Versuche. Warte zehn Minuten und führe glimpse pair dann noch einmal aus.</string>
     <string name="pairing_failed_rejected">Der Server hat die Kopplung abgelehnt. Führe glimpse pair noch einmal aus und scanne den neuen Code.</string>
     <string name="pairing_failed_unreachable">%1$s ist nicht erreichbar. Prüfe, ob dieses Smartphone online ist und der Server läuft, und versuch es dann noch einmal.</string>
     <string name="pairing_failed_local_network">Glimpse braucht Zugriff auf dein lokales Netzwerk, um %1$s zu erreichen. Erlaube ihn, wenn Android fragt, oder unter Berechtigungen in den App-Einstellungen, und versuch es dann noch einmal.</string>

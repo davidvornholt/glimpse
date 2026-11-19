@@ -15,7 +15,6 @@ class PairingFailureTest {
     @Test
     fun `tells each server answer apart`() {
         assertEquals(PairingFailure.CodeExpired, failureOf(404, ApiErrorTag.NotFound))
-        assertEquals(PairingFailure.TooManyTries, failureOf(429, ApiErrorTag.RateLimited))
         assertEquals(PairingFailure.Rejected, failureOf(400, ApiErrorTag.InvalidRequest))
         assertEquals(PairingFailure.Unknown, failureOf(500, ApiErrorTag.ServerError))
         assertEquals(PairingFailure.Unknown, failureOf(418, ApiErrorTag.Unknown))
