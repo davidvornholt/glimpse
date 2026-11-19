@@ -18,12 +18,13 @@ fun sharedPhotoKey(
 
 /**
  * A thumbnail the viewer can grow out of. It hides while the viewer shows
- * the same photo, so only one copy is ever on screen.
+ * the same photo, so only one copy is ever on screen. [hiddenKey] is the
+ * key of the photo the viewer shows, or null while the viewer is closed.
  */
 @Composable
 fun SharedPhotoSource(
     key: String,
-    visible: Boolean,
+    hiddenKey: String?,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -33,7 +34,14 @@ fun SharedPhotoSource(
             Modifier
         } else {
             with(scope) {
-                Modifier.sharedElementWithCallerManagedVisibility(rememberSharedContentState(key), visible)
+                Modifier.sharedElementWithCallerManagedVisibility(
+                    rememberSharedContentState(key),
+                    visible = key != hiddenKey,
+                    // Closing the viewer flies the photo over it into its thumbnail. While the viewer
+                    // stays open, swiping hands the photo from one thumbnail to the next; that handover
+                    // stays behind the viewer instead of flying the last thumbnail across it.
+                    renderInOverlayDuringTransition = hiddenKey == null,
+                )
             }
         }
     Box(modifier.then(shared), content = content)

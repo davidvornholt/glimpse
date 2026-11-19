@@ -206,7 +206,7 @@ private fun InboxRow(
     ) {
         SharedPhotoSource(
             key = key,
-            visible = key != hiddenKey,
+            hiddenKey = hiddenKey,
             modifier = Modifier.size(64.dp).clip(MaterialTheme.shapes.medium),
         ) {
             PhotoThumbnail(item, Modifier.matchParentSize())
