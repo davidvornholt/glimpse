@@ -1,10 +1,12 @@
 import type { ReleaseHistory } from './release-plan';
 
-// The paths whose changes reach the APK. Unit tests, this release tooling and
-// the Bun workspace files don't, so changing only those releases nothing.
+// The paths whose changes reach the APK. Unit tests, this release tooling, the
+// release smoke test and the Bun workspace files don't, so changing only those
+// releases nothing.
 export const apkPaths = [
   ':(top)apps/android',
   ':(top,exclude)apps/android/app/src/test',
+  ':(top,exclude)apps/android/scripts',
   ':(top,exclude)apps/android/src',
   ':(top,exclude)apps/android/package.json',
   ':(top,exclude)apps/android/tsconfig.json',
