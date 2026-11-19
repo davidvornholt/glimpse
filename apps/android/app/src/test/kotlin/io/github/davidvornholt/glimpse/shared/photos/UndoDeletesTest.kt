@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.test.advanceTimeBy
@@ -32,7 +33,7 @@ class UndoDeletesTest {
             val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
             val deleted = mutableListOf<String>()
 
-            fun open(scope: CoroutineScope) = UndoDeletes(store, scope, { testScheduler.currentTime }) { id, _ -> deleted.add(id) }
+            fun open(scope: CoroutineScope) = UndoDeletes(store, scope, { testScheduler.currentTime }, {}) { id, _ -> deleted.add(id) }
             val oldScope = CoroutineScope(coroutineContext + Job())
             val old = open(oldScope)
             old.start("photo", server, 8000)
@@ -52,7 +53,7 @@ class UndoDeletesTest {
         runTest {
             val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
             val deleted = mutableListOf<String>()
-            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }) { id, _ -> deleted.add(id) }
+            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }, {}) { id, _ -> deleted.add(id) }
             undo.start("first", server, 8000)
             undo.start("second", server, 8000)
             undo.undo("second")
@@ -72,7 +73,7 @@ class UndoDeletesTest {
             // Like the app's scope, where an exception nobody catches ends the process.
             val appScope = CoroutineScope(coroutineContext + SupervisorJob() + CoroutineExceptionHandler { _, error -> crashes += error })
             val undo =
-                UndoDeletes(store, appScope, { testScheduler.currentTime }) { id, _ ->
+                UndoDeletes(store, appScope, { testScheduler.currentTime }, {}) { id, _ ->
                     if (failures-- > 0) throw IOException("No space left on device")
                     deleted.add(id)
                 }
@@ -97,7 +98,7 @@ class UndoDeletesTest {
             val deleted = mutableListOf<String>()
             var failures = 1
             val undo =
-                UndoDeletes(store, backgroundScope, { testScheduler.currentTime }) { id, _ ->
+                UndoDeletes(store, backgroundScope, { testScheduler.currentTime }, {}) { id, _ ->
                     if (failures-- > 0) throw IOException("No space left on device")
                     deleted.add(id)
                 }
@@ -117,7 +118,7 @@ class UndoDeletesTest {
         runTest {
             val store = FullStore(PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") })
             val deleted = mutableListOf<String>()
-            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }) { id, _ -> deleted.add(id) }
+            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }, {}) { id, _ -> deleted.add(id) }
             undo.start("first", server, 8000)
             store.full = true
             // The first delete goes, but the phone can't save the second.
@@ -130,6 +131,70 @@ class UndoDeletesTest {
             runCurrent()
             assertNull(undo.pending.value)
             assertEquals(listOf("first", "first"), deleted)
+        }
+
+    @Test
+    fun `a delete schedules a wake-up at its deadline before it is saved`() =
+        runTest {
+            val store = FullStore(PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") })
+            val wakes = mutableListOf<Long>()
+            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }, { wakes.add(it) }) { _, _ -> }
+            advanceTimeBy(1000)
+            store.full = true
+            undo.start("photo", server, 8000)
+            assertEquals(listOf(9000L), wakes)
+            assertNull(undo.current())
+        }
+
+    @Test
+    fun `the wake-up sends a delete whose app was killed during Undo, once`() =
+        runTest {
+            val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
+            val deleted = mutableListOf<String>()
+            val killed = CoroutineScope(coroutineContext + Job())
+            UndoDeletes(store, killed, { testScheduler.currentTime }, {}) { id, _ -> deleted.add(id) }.start("photo", server, 8000)
+            advanceTimeBy(3000)
+            killed.cancel()
+            advanceTimeBy(5001)
+            runCurrent()
+            assertEquals(emptyList(), deleted)
+            // The work the wake-up scheduled starts a new process, which makes its own UndoDeletes.
+            val woken = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }, {}) { id, _ -> deleted.add(id) }
+            assertTrue(woken.settleDue())
+            runCurrent()
+            assertEquals(listOf("photo"), deleted)
+            assertNull(woken.current())
+        }
+
+    @Test
+    fun `the wake-up sends nothing after an Undo`() =
+        runTest {
+            val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
+            val deleted = mutableListOf<String>()
+            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }, {}) { id, _ -> deleted.add(id) }
+            undo.start("photo", server, 8000)
+            advanceTimeBy(2000)
+            undo.undo("photo")
+            assertTrue(undo.settleDue())
+            advanceTimeBy(8000)
+            runCurrent()
+            assertEquals(emptyList(), deleted)
+        }
+
+    @Test
+    fun `a wake-up before the deadline waits for it, and an Undo in the meantime wins`() =
+        runTest {
+            val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
+            val deleted = mutableListOf<String>()
+            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }, {}) { id, _ -> deleted.add(id) }
+            undo.start("photo", server, 8000)
+            val woken = async { undo.settleDue() }
+            advanceTimeBy(4000)
+            undo.undo("photo")
+            advanceTimeBy(5000)
+            runCurrent()
+            assertTrue(woken.await())
+            assertEquals(emptyList(), deleted)
         }
 
     /** Fails every write while [full] is set, as a phone with no space left does. */

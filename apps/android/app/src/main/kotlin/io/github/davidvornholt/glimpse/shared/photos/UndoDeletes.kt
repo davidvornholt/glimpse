@@ -24,11 +24,15 @@ data class PendingDelete(
     val deadline: Long,
 )
 
-/** The deadline and the decision survive the activity. A new process settles an overdue delete. */
+/**
+ * The deadline and the decision survive the activity. A running process settles a delete at its deadline, and
+ * [wake] has the system start one then if Android killed it, because a new process settles an overdue delete.
+ */
 class UndoDeletes(
     private val store: DataStore<Preferences>,
     scope: CoroutineScope,
     private val now: () -> Long,
+    private val wake: suspend (deadline: Long) -> Unit,
     private val delete: suspend (id: String, server: String) -> Unit,
 ) {
     private val mutex = Mutex()
@@ -71,6 +75,13 @@ class UndoDeletes(
 
     suspend fun current(): PendingDelete? = saved.first()
 
+    /** For the work [wake] scheduled: settles the pending delete once its deadline has passed. False when that failed. */
+    suspend fun settleDue(): Boolean {
+        val item = saved.first() ?: return true
+        delay((item.deadline - now()).coerceAtLeast(0))
+        return settle(item)
+    }
+
     suspend fun start(
         id: String,
         server: String,
@@ -80,11 +91,14 @@ class UndoDeletes(
             val previous = saved.first()
             if (previous?.id == id) return@withLock
             if (previous != null) delete(previous.id, previous.server)
+            val started = now()
+            val deadline = started + timeout.coerceAtMost(Long.MAX_VALUE - started)
+            // Scheduled before it is saved, so a process that dies right after still wakes for it.
+            wake(deadline)
             store.edit {
                 it[ID] = id
                 it[SERVER] = server
-                val started = now()
-                it[DEADLINE] = started + timeout.coerceAtMost(Long.MAX_VALUE - started)
+                it[DEADLINE] = deadline
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
