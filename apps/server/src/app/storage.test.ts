@@ -77,7 +77,6 @@ const startSlowOriginal = (target: TestServer, token: string, id: string) => {
 
 const draftPollMillis = 5;
 
-/** The upload draft in `directory`, once the server has made it. */
 const waitForDraft = async (directory: string): Promise<string> => {
   const draft = (await readdir(directory)).find((entry) =>
     entry.endsWith('.tmp'),
@@ -96,7 +95,7 @@ describe('the data directory', () => {
     const { token } = await pairPhone(server);
     const id = testPhotoId(1);
     await registerPhoto(server, token, id, { note: 'A private note' });
-    await putPreview(server, token, id);
+    expect((await putPreview(server, token, id)).status).toBe(200);
 
     const upload = startSlowOriginal(server, token, id);
     const draft = await waitForDraft(join(dataDirectory, 'photos', id));
@@ -105,7 +104,9 @@ describe('the data directory', () => {
     expect((await upload.response).status).toBe(200);
 
     const modes = await modesUnder(dataDirectory);
-    expect(modes.length).toBeGreaterThan(4);
+    expect(modes.map(({ path }) => path)).toContain(
+      join(dataDirectory, 'photos', id, 'preview.jpg'),
+    );
     for (const { path, directory, mode } of modes) {
       expect({ path, mode }).toEqual({
         path,

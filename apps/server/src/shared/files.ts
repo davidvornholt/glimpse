@@ -1,9 +1,8 @@
 import { Effect, FileSystem, Option, Path, Stream } from 'effect';
 
 /**
- * Photos, notes and the device list are private, so only the server's own
- * user may read them. A mode given at creation can only lose bits to the
- * umask, never gain them, so these hold under any umask.
+ * A umask can only take bits away from a mode given at creation, so no other
+ * user gains access to what is made with these, whatever the umask.
  */
 export const privateDirectoryMode = 0o700;
 export const privateFileMode = 0o600;
