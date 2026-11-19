@@ -330,3 +330,23 @@ describe('retention', () => {
     }
   });
 });
+
+describe('starting up', () => {
+  it('serves the photos it can read beside a folder it cannot', async () => {
+    const healthy = testPhotoId(1);
+    const unreadable = testPhotoId(2);
+    await sendPhoto(server, phone, healthy);
+    await sendPhoto(server, phone, unreadable);
+    const folder = join(server.dataDirectory, 'photos', unreadable);
+    await chmod(folder, 0o000);
+    try {
+      await restart();
+      expect((await server.fetch('/healthz')).status).toBe(200);
+      expect((await get(`/v1/photos/${healthy}`)).status).toBe(200);
+      expect((await get(`/v1/photos/${unreadable}`)).status).toBe(404);
+    } finally {
+      // Lets the test's data be deleted, however the test went.
+      await chmod(folder, 0o700);
+    }
+  });
+});

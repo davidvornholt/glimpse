@@ -103,9 +103,9 @@ export const loadPhotos = Effect.fn('loadPhotos')(function* (root: string) {
   yield* fs.makeDirectory(root, { recursive: true });
   const decode = Schema.decodeEffect(MetaFileSchema);
 
-  const loadOne = (name: string) =>
-    Effect.gen(function* () {
-      const directory = path.join(root, name);
+  const loadOne = (name: string) => {
+    const directory = path.join(root, name);
+    return Effect.gen(function* () {
       if ((yield* fs.stat(directory)).type !== 'Directory') {
         return Option.none<StoredPhoto>();
       }
@@ -117,18 +117,20 @@ export const loadPhotos = Effect.fn('loadPhotos')(function* (root: string) {
         (draft) => fs.remove(path.join(directory, draft), { force: true }),
         { discard: true },
       );
-      return yield* fs.readFileString(path.join(directory, 'meta.json')).pipe(
-        Effect.flatMap(decode),
-        Effect.map((photo) =>
-          photo.id === name ? Option.some(photo) : Option.none(),
+      const photo = yield* fs
+        .readFileString(path.join(directory, 'meta.json'))
+        .pipe(Effect.flatMap(decode));
+      return photo.id === name ? Option.some(photo) : Option.none();
+    }).pipe(
+      // Anything wrong with one photo, such as a folder restored with the
+      // wrong owner, skips that photo rather than stopping the server.
+      Effect.catch((error) =>
+        Effect.logWarning(`Skipping ${directory}: ${error.message}`).pipe(
+          Effect.as(Option.none<StoredPhoto>()),
         ),
-        Effect.catch((error) =>
-          Effect.logWarning(`Skipping ${directory}: ${error.message}`).pipe(
-            Effect.as(Option.none<StoredPhoto>()),
-          ),
-        ),
-      );
-    });
+      ),
+    );
+  };
 
   const loaded = yield* Effect.forEach(yield* fs.readDirectory(root), loadOne);
   return new Map(
