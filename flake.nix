@@ -1,10 +1,10 @@
 {
-  description = "Development environment";
+  description = "Glimpse, which hands photos from your phone to a coding agent, and its development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
   outputs =
-    { nixpkgs, ... }:
+    { self, nixpkgs, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -12,15 +12,41 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
       manifest = builtins.fromJSON (builtins.readFile ./package.json);
+      bunFor =
+        pkgs:
+        pkgs.callPackage ./nix/standards-bun.nix {
+          inherit (manifest) packageManager;
+        };
+      date = self.lastModifiedDate;
+      version = "0-unstable-${builtins.substring 0 4 date}-${builtins.substring 4 2 date}-${builtins.substring 6 2 date}";
     in
     {
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          glimpse = pkgs.callPackage ./nix/package.nix {
+            bun = bunFor pkgs;
+            inherit version;
+          };
+        in
+        {
+          inherit glimpse;
+          default = glimpse;
+        }
+      );
+
+      checks = forAllSystems (system: {
+        package-source = nixpkgs.legacyPackages.${system}.callPackage ./nix/package-source-check.nix {
+          inherit (self.packages.${system}.glimpse) src;
+        };
+      });
+
       devShells = forAllSystems (
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          bun = pkgs.callPackage ./nix/standards-bun.nix {
-            inherit (manifest) packageManager;
-          };
+          bun = bunFor pkgs;
           localShell =
             if builtins.pathExists ./dev-shell.local.nix then
               import ./dev-shell.local.nix { inherit pkgs; }

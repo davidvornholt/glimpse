@@ -1,0 +1,192 @@
+name: Publish container
+
+# Pull requests build the server image and smoke-test it. A push to main
+# builds the image while Standards checks the same commit, pushes it under the
+# commit's SHA, smoke-tests the pushed digest, and releases it to prod-1. The
+# gate job confirms that Standards passed on that exact commit, because a
+# squash commit on main is new and the pull request's checks do not cover it.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # Reads the package's build cache.
+      packages: read
+    # Only the newest commit of a pull request needs its image checked.
+    concurrency:
+      group: ${{ github.workflow }}-smoke-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The runner is discarded after the job, so skip the builder teardown.
+      - uses: docker/setup-buildx-action@v4
+        with:
+          cleanup: false
+      # A fork's token may not read the package. If the login or the cache
+      # import fails, the build runs without the cache.
+      - name: Log in to the GitHub Container Registry
+        continue-on-error: true
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      # Only main pushes write the layer cache; pull request builds read it.
+      - uses: docker/build-push-action@v7
+        with:
+          load: true
+          tags: glimpse-server:smoke
+          cache-from: type=registry,ref=ghcr.io/davidvornholt/glimpse:buildcache
+      # The smoke script comes from the pull request, so it runs without the token.
+      - name: Log out of the GitHub Container Registry
+        run: docker logout ghcr.io
+      - name: Verify the image serves Glimpse and stops cleanly as production runs it
+        run: bash apps/server/scripts/container-smoke.sh glimpse-server:smoke
+
+  gate:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      gated-sha: ${{ steps.gate.outputs.sha }}
+    steps:
+      - name: Require the standards gate for this exact commit
+        id: gate
+        env:
+          GATE_JOB: check
+          GATE_WORKFLOW: standards.yml
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          deadline=$(($(date -u +%s) + 2400))
+          while :; do
+            run=$(gh api \
+              "repos/$REPOSITORY/actions/workflows/$GATE_WORKFLOW/runs?head_sha=$SHA&event=push&per_page=1" \
+              --jq '.workflow_runs[0] // empty')
+            if [ -n "$run" ] && [ "$(jq -er .status <<<"$run")" = completed ]; then
+              break
+            fi
+            if [ "$(date -u +%s)" -ge "$deadline" ]; then
+              echo "::error::The $GATE_WORKFLOW gate did not complete for $SHA within the deadline"
+              exit 1
+            fi
+            sleep 20
+          done
+
+          test "$(jq -er .head_sha <<<"$run")" = "$SHA"
+          conclusion=$(jq -er .conclusion <<<"$run")
+          if [ "$conclusion" != success ]; then
+            echo "::error::The $GATE_WORKFLOW gate concluded $conclusion for $SHA"
+            exit 1
+          fi
+
+          run_id=$(jq -er .id <<<"$run")
+          job=$(gh api --paginate "repos/$REPOSITORY/actions/runs/$run_id/jobs" \
+            --jq ".jobs[] | select(.name == \"$GATE_JOB\") | .conclusion")
+          if [ "$job" != success ]; then
+            echo "::error::The $GATE_JOB job of run $run_id concluded ${job:-nothing} for $SHA"
+            exit 1
+          fi
+
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  # Runs in parallel with the gate. The pushed image is inert until the release
+  # job, which needs the gate and this job, hands its digest to the host.
+  build:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      # Only for the smoke script; the image builds from the Git context.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The registry cache exporter needs a BuildKit container builder.
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # The default Git context builds exactly github.sha. Cached layers keep
+      # their digests while their inputs are unchanged, so production pulls
+      # only the layers a commit changed. The cache lives in the registry
+      # under the buildcache tag, outside the shared Actions cache quota;
+      # nothing deploys that tag.
+      - name: Build and push the commit image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          push: true
+          provenance: false
+          tags: ghcr.io/davidvornholt/glimpse:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=registry,ref=ghcr.io/davidvornholt/glimpse:buildcache
+          cache-to: type=registry,ref=ghcr.io/davidvornholt/glimpse:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
+
+      # A release needs this job, so an image that fails here never ships.
+      - name: Verify the pushed image serves Glimpse and stops cleanly
+        env:
+          IMAGE: ghcr.io/davidvornholt/glimpse@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull --quiet "$IMAGE"
+          bash apps/server/scripts/container-smoke.sh "$IMAGE"
+
+  release:
+    needs: [gate, build]
+    if: >-
+      github.repository == 'davidvornholt/glimpse' &&
+      github.ref == 'refs/heads/main' &&
+      needs.gate.outputs.gated-sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    concurrency:
+      group: app-release-glimpse
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - name: Checkout the released commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Release the image to production
+        id: release
+        uses: ./.github/actions/app-release
+        with:
+          unit: glimpse
+          host: prod-1.vornholt.online
+          known-host: prod-1.vornholt.online ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFkom7Y24gnBa9X+gUDBZvlCnXiuKTo87ROOtlMpgNH5
+          images: glimpse@${{ needs.build.outputs.digest }}
+          age-key: ${{ secrets.SOPS_AGE_KEY }}

@@ -56,3 +56,11 @@ Operational scripts belong in the owning workspace's `package.json`. Root script
 Use Effect extensively wherever it makes sense, because it helps agents write more robust code. In an Effect v4 workspace, follow the agent guide shipped at `node_modules/effect/AGENTS.md`, because v4's API differs from the v3 most models learned.
 
 ## Project-specific rules
+
+Glimpse is public, and people run it for their own photos. Never put a real server address, domain, host name, token, or anything about a person who runs it into the repository, its issues, or its PRs; use `glimpse.example.com` and the development token.
+
+Tokens and photos are private. The server keeps only SHA-256 digests of tokens, and nothing prints a token after it is issued, including errors and logs. Logs never hold notes or image bytes.
+
+`packages/api` is the contract between the server, the CLI, and the Android app, which mirrors it. Change all three in the same change, and `docs/api.md` for behavior the schemas don't show.
+
+`apps/cli/skills/glimpse/SKILL.md` is how agents learn the CLI. Change it in the same change as a command, flag, or output it describes.
