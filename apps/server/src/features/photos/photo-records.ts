@@ -107,32 +107,43 @@ export const loadPhotos = Effect.fn('loadPhotos')(function* (root: string) {
   });
   const decode = Schema.decodeEffect(MetaFileSchema);
 
-  const loadOne = (name: string) =>
-    Effect.gen(function* () {
-      const directory = path.join(root, name);
+  const loadOne = (name: string) => {
+    const directory = path.join(root, name);
+    return Effect.gen(function* () {
       if ((yield* fs.stat(directory)).type !== 'Directory') {
         return Option.none<StoredPhoto>();
       }
       const drafts = (yield* fs.readDirectory(directory)).filter((entry) =>
         entry.endsWith('.tmp'),
       );
+      // A draft left behind is harmless, so one that can't go doesn't hide
+      // the photo.
       yield* Effect.forEach(
         drafts,
-        (draft) => fs.remove(path.join(directory, draft), { force: true }),
+        (draft) =>
+          fs
+            .remove(path.join(directory, draft), { force: true })
+            .pipe(
+              Effect.catch((error) =>
+                Effect.logWarning(
+                  `Keeping a cut-off upload in ${directory}: ${error.message}`,
+                ),
+              ),
+            ),
         { discard: true },
       );
-      return yield* fs.readFileString(path.join(directory, 'meta.json')).pipe(
-        Effect.flatMap(decode),
-        Effect.map((photo) =>
-          photo.id === name ? Option.some(photo) : Option.none(),
+      const photo = yield* fs
+        .readFileString(path.join(directory, 'meta.json'))
+        .pipe(Effect.flatMap(decode));
+      return photo.id === name ? Option.some(photo) : Option.none();
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning(`Skipping ${directory}: ${error.message}`).pipe(
+          Effect.as(Option.none<StoredPhoto>()),
         ),
-        Effect.catch((error) =>
-          Effect.logWarning(`Skipping ${directory}: ${error.message}`).pipe(
-            Effect.as(Option.none<StoredPhoto>()),
-          ),
-        ),
-      );
-    });
+      ),
+    );
+  };
 
   const loaded = yield* Effect.forEach(yield* fs.readDirectory(root), loadOne);
   return new Map(
