@@ -101,7 +101,7 @@ class PhotoFeed(
 
                             is ServerEvent.PhotoDeleted -> {
                                 forget(event.id)
-                                removed.tryEmit(event.id)
+                                removed.emit(event.id)
                             }
 
                             is ServerEvent.Waiting -> {
@@ -140,7 +140,7 @@ class PhotoFeed(
             cursor = page.nextCursor
         } while (cursor != null && photos.size < MAX_PHOTOS)
         all.value = photos.associateBy { it.id }
-        if (cursor == null) listed.tryEmit(ServerList(session, photos.mapTo(HashSet()) { it.id }, since))
+        if (cursor == null) listed.tryEmit(ServerList(session, photos.mapTo(HashSet()) { it.id }))
     }
 
     fun upsert(photo: Photo) {

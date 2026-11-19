@@ -68,7 +68,10 @@ class PhotoLibrary(
             captures.records.collect { records -> records.values.filter { it.deletedOnServer }.forEach { captures.remove(it.id) } }
         }
         scope.launch {
-            feed.deleted.collect { id -> if (captures.records.value[id]?.isDone == true) captures.remove(id) }
+            feed.deleted.collect { id ->
+                captures.load()
+                if (captures.records.value[id]?.isDone == true) captures.remove(id)
+            }
         }
         scope.launch { feed.lists.collect { removeDeleted(it) } }
         scope.launch {
@@ -125,6 +128,7 @@ class PhotoLibrary(
 
     /** Takes the photos deleted on the server while the phone wasn't listening off the phone. */
     private suspend fun removeDeleted(list: ServerList) {
+        captures.load()
         val api = apiFor(list.session)
         val deleted = list.deletedAmong(captures.records.value.values) { id -> exists(api, id) }
         // A list from a server the phone has left says nothing about the photos it has now.
