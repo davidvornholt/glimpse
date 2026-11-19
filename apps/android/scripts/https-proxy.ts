@@ -17,7 +17,6 @@ const env = (name: string) => {
 };
 
 const target = new URL(env('PROXY_TARGET'));
-// A reply from the server always has a status; the type doesn't know that.
 const badGateway = 502;
 
 const server = createServer(
