@@ -51,8 +51,8 @@ class CaptureStore(
     /** Written before CameraX receives its output file. A new process can finish either JPEG. */
     suspend fun beginCamera(record: CaptureRecord): File {
         val dir = prepare(record.id)
-        write(record, File(dir, "preparing.json"))
-        return File(dir, "camera.jpg")
+        write(record, File(dir, JOURNAL))
+        return File(dir, CAMERA_OUTPUT)
     }
 
     /** Only records found on the first load, never a camera currently writing its JPEG. */
@@ -62,20 +62,32 @@ class CaptureStore(
             interrupted.toList()
         }
 
+    /**
+     * Finishes each interrupted camera with the JPEG it left, or [abandon]s it when only its
+     * journal is there. A directory holding an image recovery can't place stays as it is,
+     * because that image may be the only copy of the photo.
+     */
     suspend fun recoverCameras(
         finish: suspend (CaptureRecord, File) -> Unit,
         abandon: suspend (String) -> Unit,
     ) {
         for (record in interruptedCameras()) {
-            val raw = File(directory(record.id), "camera.jpg")
-            val jpeg = if (raw.isFile) raw else originalFile(record)
-            if (jpeg.isFile) {
+            val left =
+                withContext(Dispatchers.IO) {
+                    directory(record.id).list().orEmpty().filterNot { it == JOURNAL || it == "$JOURNAL.part" }
+                }
+            val jpeg =
+                listOf(CAMERA_OUTPUT, originalFile(record).name).firstOrNull { it in left }
+                    // CameraX writes the photo to a file of its own beside the one it was given, and
+                    // renames it only once it's complete. Two of them can't be told apart.
+                    ?: left.singleOrNull { it.startsWith("CameraX") && it.endsWith(".jpg") }
+            if (jpeg != null) {
                 try {
-                    finish(record, jpeg)
+                    finish(record, File(directory(record.id), jpeg))
                 } catch (_: IOException) {
                     // Keep the journal and JPEG for recovery, including when storage is full.
                 }
-            } else {
+            } else if (left.isEmpty()) {
                 abandon(record.id)
             }
         }
@@ -103,7 +115,7 @@ class CaptureStore(
                                 if (record.id == directory.name) record else record.freshRegistration(directory.name)
                             }
                         } else {
-                            val preparing = File(directory, "preparing.json")
+                            val preparing = File(directory, JOURNAL)
                             if (preparing.isFile) read(preparing)?.let(interrupted::add)
                             // Older captures can have an original but no identifying metadata.
                             // Keep the only copy even when we cannot reconstruct its record.
@@ -130,7 +142,7 @@ class CaptureStore(
         mutex.withLock {
             loadLocked()
             write(record)
-            withContext(Dispatchers.IO) { File(directory(record.id), "preparing.json").delete() }
+            withContext(Dispatchers.IO) { File(directory(record.id), JOURNAL).delete() }
             all.value += record.id to record
         }
 
@@ -235,6 +247,9 @@ class CaptureStore(
     }
 
     private companion object {
+        /** The record of a photo the camera is still taking. */
+        const val JOURNAL = "preparing.json"
+        const val CAMERA_OUTPUT = "camera.jpg"
         val KEEP_FOR: Duration = Duration.ofDays(31)
     }
 }

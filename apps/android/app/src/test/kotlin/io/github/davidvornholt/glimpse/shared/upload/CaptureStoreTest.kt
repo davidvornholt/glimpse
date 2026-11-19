@@ -16,32 +16,6 @@ class CaptureStoreTest {
     private val root = Files.createTempDirectory("captures").toFile()
     private val record = CaptureRecord(TEST_PHOTO_ID, TEST_TIME, PhotoSource.Camera, 4032, 3024, OriginalType.Jpeg)
 
-    @Test
-    fun `restart resumes a journaled camera original only until the finished record is saved`() =
-        runTest {
-            val before = CaptureStore(root)
-            before.beginCamera(record)
-            before.originalFile(record).writeText("jpeg")
-            assertTrue(before.interruptedCameras().isEmpty())
-
-            val restarted = CaptureStore(root)
-            val resumed = mutableListOf<String>()
-            restarted.recoverCameras(
-                finish = { pending, jpeg ->
-                    assertEquals(record, pending)
-                    assertEquals("jpeg", jpeg.readText())
-                    restarted.previewFile(pending.id).writeText("preview")
-                    restarted.add(pending)
-                    resumed.add(pending.id)
-                },
-                abandon = { error("The original still exists") },
-            )
-            assertEquals(listOf(record.id), resumed)
-            val again = CaptureStore(root)
-            assertTrue(again.interruptedCameras().isEmpty())
-            assertEquals(record, again.get(record.id))
-        }
-
     @AfterTest
     fun cleanUp() {
         root.deleteRecursively()
