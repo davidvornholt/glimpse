@@ -63,7 +63,7 @@ profileinstaller = { module = "androidx.profileinstaller:profileinstaller", vers
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 
-mockito = { module = "org.mockito:mockito-core", version = "5.14.2" }
+mockito = { module = "org.mockito:mockito-core", version = "5.24.0" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
