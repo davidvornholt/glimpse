@@ -1,6 +1,8 @@
 package io.github.davidvornholt.glimpse.shared.photos
 
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -109,4 +111,36 @@ class UndoDeletesTest {
             assertEquals(listOf("first"), deleted)
             assertNull(undo.pending.value)
         }
+
+    @Test
+    fun `a delete that can't be saved leaves the photo instead of ending the app`() =
+        runTest {
+            val store = FullStore(PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") })
+            val deleted = mutableListOf<String>()
+            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }) { id, _ -> deleted.add(id) }
+            undo.start("first", server, 8000)
+            store.full = true
+            // The first delete goes, but the phone can't save the second.
+            undo.start("second", server, 8000)
+            runCurrent()
+            assertEquals(listOf("first"), deleted)
+            assertEquals("first", undo.pending.value?.id)
+            store.full = false
+            advanceTimeBy(8001)
+            runCurrent()
+            assertNull(undo.pending.value)
+            assertEquals(listOf("first", "first"), deleted)
+        }
+
+    /** Fails every write while [full] is set, as a phone with no space left does. */
+    private class FullStore(
+        private val inner: DataStore<Preferences>,
+    ) : DataStore<Preferences> by inner {
+        var full = false
+
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+            if (full) throw IOException("No space left on device")
+            return inner.updateData(transform)
+        }
+    }
 }

@@ -1,12 +1,18 @@
 package io.github.davidvornholt.glimpse.features.share
 
 import android.net.Uri
+import android.os.Bundle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.DEFAULT_ARGS_KEY
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.MutableCreationExtras
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.davidvornholt.glimpse.shared.api.GlimpseJson
 import io.github.davidvornholt.glimpse.shared.api.PhotoSource
 import io.github.davidvornholt.glimpse.shared.photos.ImageBatch
@@ -93,10 +99,21 @@ internal class ShareImport(
             else -> Stage.Failed
         }
 
-    private companion object {
-        // The share intent's extras seed the saved state, so the keys are ones no sending app uses.
-        const val REQUEST = "io.github.davidvornholt.glimpse.share.request"
-        const val ADDED = "io.github.davidvornholt.glimpse.share.added"
-        const val COMPLETED = "io.github.davidvornholt.glimpse.share.completed"
+    companion object {
+        /**
+         * Builds the model from the state this screen saved alone. Android would otherwise seed that state with the
+         * share intent's extras, which the sending app picks, so they could start an import nobody sent.
+         */
+        val factory =
+            viewModelFactory {
+                initializer {
+                    val withoutIntentExtras = MutableCreationExtras(this).apply { set(DEFAULT_ARGS_KEY, Bundle.EMPTY) }
+                    ShareImport(withoutIntentExtras.createSavedStateHandle())
+                }
+            }
+
+        private const val REQUEST = "io.github.davidvornholt.glimpse.share.request"
+        private const val ADDED = "io.github.davidvornholt.glimpse.share.added"
+        private const val COMPLETED = "io.github.davidvornholt.glimpse.share.completed"
     }
 }

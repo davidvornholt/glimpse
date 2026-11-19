@@ -335,6 +335,21 @@ class PairingBoundaryTest {
             assertEquals(waiting, kept)
         }
 
+    @Test fun `a photo deleted after the server removed this phone doesn't upload again after pairing again`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record)
+            keep(record.copy(registered = true, registrations = 1))
+            library.startDelete(record.id, UNDO_MILLIS)
+            // The server removes this phone before Undo runs out, so the delete has no pairing to go with.
+            `when`(sessions.currentSession()).thenReturn(null)
+            advanceTimeBy(UNDO_MILLIS * 2)
+            runCurrent()
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertEquals(emptyMap(), captures.records.value)
+            assertEquals(setOf(record.id), remote.photos.keys)
+        }
+
     @Test fun `switching clears the next photo note`() =
         runTest {
             claimer().claim(link, "Phone")

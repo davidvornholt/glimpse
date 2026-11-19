@@ -344,10 +344,13 @@ class PhotoLibrary(
         id: String,
         server: String,
     ) {
-        if (deletionSession(server, sessions.currentSession()) == null) return
-        hidden.update { it + id }
-        // Queued first, so the server hears of it even when the process dies right after.
-        deletes.enqueue(id, server)
+        // Without a pairing with that server, as when it removed this phone during Undo, the delete can't reach it.
+        // The phone's copy goes anyway, so pairing again doesn't upload the photo.
+        if (deletionSession(server, sessions.currentSession()) != null) {
+            hidden.update { it + id }
+            // Queued first, so the server hears of it even when the process dies right after.
+            deletes.enqueue(id, server)
+        }
         uploads.cancel(id)
         captures.remove(id)
         feed.forget(id)

@@ -73,7 +73,7 @@ internal fun ShareSheet(
     onFinish: () -> Unit,
 ) {
     val view = LocalView.current
-    val model: ShareImport = viewModel()
+    val model: ShareImport = viewModel(factory = ShareImport.factory)
     val stage = model.stage
     val sheetState =
         rememberBottomSheetState(SheetValue.Hidden, setOf(SheetValue.Hidden, SheetValue.Expanded)) { value ->

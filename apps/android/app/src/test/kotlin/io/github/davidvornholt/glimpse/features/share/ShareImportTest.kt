@@ -59,12 +59,6 @@ class ShareImportTest {
         Dispatchers.resetMain()
     }
 
-    @Test fun `a share whose sender adds extras named like the saved import opens for editing`() {
-        // The activity's intent extras seed the saved state, so any app sharing images can set these.
-        val extras = SavedStateHandle(mapOf("request" to "Holiday photos", "added" to "all", "completed" to "none"))
-        assertEquals(Stage.Editing, screen(extras).stage)
-    }
-
     @Test fun `a saved import resumes with the same photos after the process is recreated`() =
         runTest {
             Dispatchers.setMain(StandardTestDispatcher(testScheduler))

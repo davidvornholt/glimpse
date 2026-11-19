@@ -76,24 +76,21 @@ class UndoDeletes(
         server: String,
         timeout: Long,
     ) = mutex.withLock {
-        val previous = saved.first()
-        if (previous?.id == id) return@withLock
-        if (previous != null) {
-            try {
-                delete(previous.id, previous.server)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                // The earlier delete stays pending and its deadline tries it again. The new one
-                // isn't started, so the photo stays visible instead of the app ending.
-                return@withLock
+        try {
+            val previous = saved.first()
+            if (previous?.id == id) return@withLock
+            if (previous != null) delete(previous.id, previous.server)
+            store.edit {
+                it[ID] = id
+                it[SERVER] = server
+                val started = now()
+                it[DEADLINE] = started + timeout.coerceAtMost(Long.MAX_VALUE - started)
             }
-        }
-        store.edit {
-            it[ID] = id
-            it[SERVER] = server
-            val started = now()
-            it[DEADLINE] = started + timeout.coerceAtMost(Long.MAX_VALUE - started)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // As in settle, the phone may be full. The new delete isn't started, so the photo stays visible instead
+            // of the app ending, and an earlier delete that hasn't been cleared is tried again at its deadline.
         }
         Unit
     }
