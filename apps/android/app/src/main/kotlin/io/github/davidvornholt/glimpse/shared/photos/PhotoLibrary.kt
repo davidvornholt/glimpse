@@ -17,7 +17,6 @@ import io.github.davidvornholt.glimpse.shared.ulid.UlidGenerator
 import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
 import io.github.davidvornholt.glimpse.shared.upload.CaptureStore
 import io.github.davidvornholt.glimpse.shared.upload.DeleteScheduler
-import io.github.davidvornholt.glimpse.shared.upload.UploadFailure
 import io.github.davidvornholt.glimpse.shared.upload.UploadScheduler
 import io.github.davidvornholt.glimpse.shared.upload.deletionSession
 import kotlinx.coroutines.CoroutineScope
@@ -389,7 +388,7 @@ class PhotoLibrary(
         captures.records.value.values
             .filter { record ->
                 val imagesLeft = !record.registered || !record.previewSent || (!record.originalSent && !record.originalSkipped)
-                imagesLeft && !record.deletedOnServer && record.failure != UploadFailure.Rejected && record.id !in waitingForDelete
+                imagesLeft && !record.deletedOnServer && record.id !in waitingForDelete
             }.forEach { captures.renewRegistration(it.id, ids.next()) }
     }
 

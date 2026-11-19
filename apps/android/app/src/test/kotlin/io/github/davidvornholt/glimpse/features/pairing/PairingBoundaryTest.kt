@@ -211,6 +211,16 @@ class PairingBoundaryTest {
             assertUploadedAgain()
         }
 
+    @Test fun `a photo rejected after an earlier pairing uploads again under the new device`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record)
+            // Released versions marked the server's 403 for another device as a rejection.
+            keep(record.copy(registered = true, failure = UploadFailure.Rejected))
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertUploadedAgain()
+        }
+
     @Test fun `a fully uploaded photo keeps its id and sends only its new note`() =
         runTest {
             val claimer = claimer()
