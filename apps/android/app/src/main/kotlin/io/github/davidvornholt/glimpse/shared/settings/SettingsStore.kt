@@ -1,6 +1,7 @@
 package io.github.davidvornholt.glimpse.shared.settings
 
 import android.content.Context
+import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class CaptureMode { Photo, Scan }
 
@@ -28,13 +31,15 @@ data class Settings(
 )
 
 class SettingsStore(
-    context: Context,
+    private val store: DataStore<Preferences>,
     scope: CoroutineScope,
 ) {
-    private val store =
+    constructor(context: Context, scope: CoroutineScope) : this(
         PreferenceDataStoreFactory.create(scope = CoroutineScope(scope.coroutineContext + Dispatchers.IO)) {
             context.preferencesDataStoreFile("settings")
-        }
+        },
+        scope,
+    )
 
     val settings: StateFlow<Settings> = store.data.map { it.toSettings() }.stateIn(scope, SharingStarted.Eagerly, Settings())
 
@@ -55,15 +60,59 @@ class SettingsStore(
             if (note.isNullOrBlank()) it.remove(PENDING_NOTE) else it[PENDING_NOTE] = note
         }
 
-    /** Hands out the note waiting for the next photo, once. */
-    suspend fun takePendingNote(): String? {
-        var note: String? = null
-        store.edit {
-            note = it[PENDING_NOTE]
-            it.remove(PENDING_NOTE)
+    private val reservations = Mutex()
+    private val active = mutableSetOf<String>()
+
+    /** A capture owns its note from the shutter press until it produces a photo or fails. */
+    suspend fun reserveNote(id: String) =
+        reservations.withLock {
+            store.edit {
+                val key = reservation(id)
+                if (key !in it) {
+                    it[PENDING_NOTE]?.let { note ->
+                        it[key] = note
+                        it.remove(PENDING_NOTE)
+                    }
+                }
+            }
+            active.add(id)
+            Unit
         }
-        return note
+
+    suspend fun reservedNote(id: String): String? = store.data.first()[reservation(id)]
+
+    suspend fun finishNote(
+        id: String,
+        used: Boolean,
+    ) = reservations.withLock {
+        store.edit {
+            val key = reservation(id)
+            val note = it[key]
+            it.remove(key)
+            if (!used && note != null && PENDING_NOTE !in it) it[PENDING_NOTE] = note
+        }
+        active.remove(id)
+        Unit
     }
+
+    /** Reconcile a process death between reserving a note and receiving or recording the image. */
+    suspend fun recoverNotes(
+        waiting: Set<String>,
+        used: Set<String>,
+    ) = reservations.withLock {
+        store.edit { prefs ->
+            for (key in prefs.asMap().keys.filter { it.name.startsWith(RESERVED) }) {
+                val id = key.name.removePrefix(RESERVED)
+                if (id in active || id in waiting) continue
+                val note = prefs[reservation(id)]
+                if (id !in used && note != null && PENDING_NOTE !in prefs) prefs[PENDING_NOTE] = note
+                prefs.remove(key)
+            }
+        }
+        Unit
+    }
+
+    private fun reservation(id: String) = stringPreferencesKey(RESERVED + id)
 
     suspend fun setMode(mode: CaptureMode) = store.edit { it[MODE] = mode.name }
 
@@ -72,6 +121,7 @@ class SettingsStore(
     suspend fun clear() = store.edit { it.clear() }
 
     private companion object {
+        const val RESERVED = "capture_note_"
         val KEEP_COPY = booleanPreferencesKey("keep_copy_in_gallery")
         val PENDING_NOTE = stringPreferencesKey("pending_note")
         val MODE = stringPreferencesKey("mode")

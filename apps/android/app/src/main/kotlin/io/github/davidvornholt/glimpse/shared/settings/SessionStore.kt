@@ -15,6 +15,14 @@ import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.serialization.Serializable
+
+/** Identifies a pairing without storing its credentials with the photo. */
+@Serializable
+data class PairingId(
+    val server: String,
+    val deviceId: String,
+)
 
 /** The pairing this phone has with a server. The token stays in memory only. */
 data class Session(
@@ -23,6 +31,8 @@ data class Session(
     val deviceId: String,
     val deviceName: String,
 ) {
+    val pairing get() = PairingId(server, deviceId)
+
     override fun toString() = "Session(server=$server, deviceId=$deviceId, deviceName=$deviceName)"
 }
 
@@ -71,6 +81,12 @@ class SessionStore(
     suspend fun current(): SessionState = state.filterNot { it is SessionState.Loading }.first()
 
     suspend fun currentSession(): Session? = (current() as? SessionState.Paired)?.session
+
+    /** Read the committed pairing even before its change has reached the UI flow. */
+    suspend fun isCurrent(pairing: PairingId): Boolean {
+        val prefs = store.data.first()
+        return prefs[TOKEN] != null && prefs[SERVER] == pairing.server && prefs[DEVICE_ID] == pairing.deviceId
+    }
 
     /** The server this phone was last paired with, even after it was removed. */
     suspend fun lastServer(): String? = store.data.first()[SERVER]

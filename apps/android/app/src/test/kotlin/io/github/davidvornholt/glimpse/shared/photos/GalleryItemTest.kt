@@ -39,7 +39,7 @@ class GalleryItemTest {
 
     @Test
     fun `shows an edit the phone hasn't sent yet over the server's note`() {
-        assertEquals("Both", noteOf(uploaded.copy(note = "Both"), "The right one"))
-        assertNull(noteOf(uploaded.copy(note = null), "The right one"))
+        assertEquals("Both", noteOf(uploaded.withNote("Both"), "The right one"))
+        assertNull(noteOf(uploaded.withNote(null), "The right one"))
     }
 }

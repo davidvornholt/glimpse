@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Delete
@@ -34,6 +34,7 @@ import androidx.compose.material3.FloatingToolbarDefaults
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -81,6 +82,7 @@ import io.github.davidvornholt.glimpse.shared.ui.uploadStatus
 @Composable
 fun PhotoViewer(
     shown: Transition<Boolean>,
+    loaded: Boolean,
     items: List<GalleryItem>,
     origin: String,
     currentId: String?,
@@ -101,6 +103,7 @@ fun PhotoViewer(
             origin = origin,
             currentId = currentId.orEmpty(),
             open = shown.targetState,
+            loaded = loaded,
             onPageChange = onPageChange,
             onClose = onClose,
             actions = actions,
@@ -115,6 +118,7 @@ private fun ViewerContent(
     origin: String,
     currentId: String,
     open: Boolean,
+    loaded: Boolean,
     onPageChange: (String) -> Unit,
     onClose: () -> Unit,
     actions: PhotoActions,
@@ -124,11 +128,22 @@ private fun ViewerContent(
     var zoomedId by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<GalleryItem?>(null) }
     val back by rememberPredictiveBack(enabled = open && editing == null, onBack = onClose)
-    val pager =
-        rememberPagerState(initialPage = items.indexOfFirst { it.id == currentId }.coerceAtLeast(0)) { items.size }
+    // A restored pager index belongs to the old list. Wait until we can anchor a fresh pager by id.
+    val start = viewerStart(items.indexOfFirst { it.id == currentId }, loaded)
+    val count by rememberUpdatedState(items.size)
+    var anchored by remember { mutableStateOf(false) }
+    if (!anchored && (start == null || start < 0)) {
+        LaunchedEffect(start) { if (start == -1) onClose() }
+        Box(Modifier.fillMaxSize().background(Color.Black).backGesture({ back }), contentAlignment = Alignment.Center) {
+            if (start == null) LoadingIndicator()
+        }
+        return
+    }
+    val activePager = remember { PagerState(currentPage = start ?: 0) { count } }
+    SideEffect { anchored = true }
     val pageChange by rememberUpdatedState(onPageChange)
-    LaunchedEffect(pager, items) {
-        snapshotFlow { pager.currentPage }.collect { page -> items.getOrNull(page)?.id?.let(pageChange) }
+    LaunchedEffect(activePager, items) {
+        snapshotFlow { activePager.currentPage }.collect { page -> items.getOrNull(page)?.id?.let(pageChange) }
     }
     // The photo that fills most of the screen is the one that grows and shrinks with the thumbnail,
     // even when the viewer closes before a swipe has come to rest. It changes only while the viewer
@@ -141,7 +156,7 @@ private fun ViewerContent(
     LaunchedEffect(items.isEmpty()) { if (items.isEmpty()) onClose() }
     // The controls follow the page that fills most of the screen, so they never act on a photo that
     // is sliding away.
-    val current = items.getOrNull(pager.currentPage) ?: items.firstOrNull { it.id == currentId }
+    val current = items.getOrNull(activePager.currentPage) ?: items.firstOrNull { it.id == currentId }
 
     Box(
         Modifier
@@ -150,7 +165,7 @@ private fun ViewerContent(
             .background(Color.Black.copy(alpha = 1f - back * BACK_FADE)),
     ) {
         HorizontalPager(
-            state = pager,
+            state = activePager,
             key = { items[it].id },
             userScrollEnabled = zoomedId == null || zoomedId != current?.id,
             beyondViewportPageCount = 1,

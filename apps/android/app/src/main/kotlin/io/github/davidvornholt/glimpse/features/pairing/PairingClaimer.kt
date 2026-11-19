@@ -6,7 +6,6 @@ import io.github.davidvornholt.glimpse.shared.api.GlimpseApi
 import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
 import io.github.davidvornholt.glimpse.shared.settings.Session
-import io.github.davidvornholt.glimpse.shared.settings.SessionStore
 import java.io.IOException
 
 /** Why pairing didn't work, each with its own fix. */
@@ -32,7 +31,6 @@ enum class PairingFailure {
 /** Trades a pairing code for this phone's own token, then starts using it. */
 class PairingClaimer(
     private val anonymousApi: (String) -> GlimpseApi,
-    private val sessions: SessionStore,
     private val library: PhotoLibrary,
 ) {
     suspend fun claim(
@@ -40,12 +38,8 @@ class PairingClaimer(
         deviceName: String,
     ): Session {
         val result = anonymousApi(link.server).claim(link.code, deviceName.trim())
-        // Photos waiting for another server don't belong on this one.
-        val previous = sessions.lastServer()
-        if (previous != null && previous != link.server) library.clear()
         val session = Session(link.server, result.token, result.device.id, result.device.name)
-        sessions.save(session)
-        library.resumeUploads()
+        library.changePairing(session)
         return session
     }
 

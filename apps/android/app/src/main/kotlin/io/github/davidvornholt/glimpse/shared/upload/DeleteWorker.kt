@@ -9,6 +9,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.await
 import androidx.work.workDataOf
 import io.github.davidvornholt.glimpse.GlimpseApp
 import io.github.davidvornholt.glimpse.shared.api.ApiErrorTag
@@ -37,7 +38,7 @@ class DeleteScheduler(
                 .toSet()
         }
 
-    fun enqueue(id: String) {
+    suspend fun enqueue(id: String) {
         val request =
             OneTimeWorkRequestBuilder<DeleteWorker>()
                 .setInputData(workDataOf(DeleteWorker.KEY_ID to id))
@@ -46,7 +47,7 @@ class DeleteScheduler(
                 .addTag(TAG)
                 .addTag(PHOTO_TAG + id)
                 .build()
-        workManager.enqueueUniqueWork("delete-$id", ExistingWorkPolicy.KEEP, request)
+        workManager.enqueueUniqueWork("delete-$id", ExistingWorkPolicy.KEEP, request).await()
     }
 
     private companion object {

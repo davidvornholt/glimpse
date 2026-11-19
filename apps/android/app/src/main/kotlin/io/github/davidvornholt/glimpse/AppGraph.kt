@@ -1,6 +1,8 @@
 package io.github.davidvornholt.glimpse
 
 import android.content.Context
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.preferencesDataStoreFile
 import io.github.davidvornholt.glimpse.shared.api.GlimpseApi
 import io.github.davidvornholt.glimpse.shared.api.isOnServer
 import io.github.davidvornholt.glimpse.shared.haptics.Haptics
@@ -54,6 +56,10 @@ class AppGraph(
     val library =
         PhotoLibrary(
             captures = captures,
+            undoStore =
+                PreferenceDataStoreFactory.create {
+                    context.preferencesDataStoreFile("undo")
+                },
             uploads = uploads,
             deletes = deletes,
             feed = feed,

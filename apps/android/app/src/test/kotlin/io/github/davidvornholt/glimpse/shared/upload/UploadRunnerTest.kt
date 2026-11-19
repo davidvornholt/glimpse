@@ -8,6 +8,7 @@ import io.github.davidvornholt.glimpse.shared.api.PhotoSource
 import io.github.davidvornholt.glimpse.shared.api.TEST_PHOTO_ID
 import io.github.davidvornholt.glimpse.shared.api.TEST_TIME
 import io.github.davidvornholt.glimpse.shared.api.testPhoto
+import io.github.davidvornholt.glimpse.shared.settings.PairingId
 import kotlinx.coroutines.test.runTest
 import java.io.IOException
 import kotlin.test.Test
@@ -87,6 +88,18 @@ class UploadRunnerTest {
     private fun record(note: String? = null) = CaptureRecord(id, TEST_TIME, PhotoSource.Camera, 4032, 3024, OriginalType.Jpeg, note = note)
 
     @Test
+    fun `a worker using a different pairing makes no request`() =
+        runTest {
+            val server = FakeServer()
+            val owner = PairingId("https://glimpse.example.com", "first")
+            val record = record().copy(pairing = owner)
+            val runner = UploadRunner(server, MemoryRecords(record))
+            assertEquals(UploadOutcome.Gone, runner.run(id, owner.copy(deviceId = "second")))
+            assertTrue(server.calls.isEmpty())
+            assertEquals(UploadOutcome.Done, runner.run(id, owner))
+        }
+
+    @Test
     fun `uploads a new photo step by step`() =
         runTest {
             val server = FakeServer()
@@ -107,7 +120,7 @@ class UploadRunnerTest {
     fun `sends a note added after the photo was registered`() =
         runTest {
             val server = FakeServer()
-            val records = MemoryRecords(record(note = "Changed my mind").copy(registered = true, registrations = 1))
+            val records = MemoryRecords(record().copy(registered = true, registrations = 1).withNote("Changed my mind"))
 
             assertEquals(UploadOutcome.Done, UploadRunner(server, records).run(id))
 

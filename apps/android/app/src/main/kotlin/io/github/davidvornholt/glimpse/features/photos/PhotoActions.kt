@@ -3,15 +3,12 @@ package io.github.davidvornholt.glimpse.features.photos
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.core.content.FileProvider
 import io.github.davidvornholt.glimpse.R
 import io.github.davidvornholt.glimpse.shared.api.ApiException
 import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
 import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -28,6 +25,7 @@ class PhotoActions(
     private val library: PhotoLibrary,
     private val scope: CoroutineScope,
     private val snackbar: SnackbarHostState,
+    private val undoMillis: Long,
 ) {
     private fun message(id: Int) = context.getString(id)
 
@@ -74,23 +72,7 @@ class PhotoActions(
 
     /** Hides the photo at once and deletes it unless the user undoes it in time. */
     fun delete(item: GalleryItem) {
-        library.hide(item.id)
-        // Only one undo waits at a time: a new delete settles the one before.
-        snackbar.currentSnackbarData?.dismiss()
-        scope.launch {
-            val result =
-                try {
-                    snackbar.showSnackbar(
-                        message = message(R.string.viewer_deleted),
-                        actionLabel = message(R.string.action_undo),
-                        duration = SnackbarDuration.Long,
-                    )
-                } catch (error: CancellationException) {
-                    library.restore(item.id)
-                    throw error
-                }
-            if (result == SnackbarResult.ActionPerformed) library.restore(item.id) else library.delete(item.id)
-        }
+        scope.launch { library.undo.start(item.id, undoMillis) }
     }
 
     fun setNote(

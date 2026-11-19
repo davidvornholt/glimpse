@@ -1,9 +1,6 @@
 package io.github.davidvornholt.glimpse.shared.photos
 
-/**
- * How many of the images given to [PhotoLibrary.addImages] it took in. The
- * ones it took in are queued, so sending the batch again would send them twice.
- */
+/** How many images in the selection now have a committed capture record. */
 data class ImportResult(
     val added: Int,
     val total: Int,

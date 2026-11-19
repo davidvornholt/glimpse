@@ -25,8 +25,10 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -43,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -110,7 +113,7 @@ fun GlimpseRoot(
             snackbar.showSnackbar(invalidMessage)
         }
     }
-    val claimer = remember(graph) { PairingClaimer(graph::anonymousApi, graph.sessions, graph.library) }
+    val claimer = remember(graph) { PairingClaimer(graph::anonymousApi, graph.library) }
     val paired = session as? SessionState.Paired
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -171,10 +174,24 @@ private fun PairedContent(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val items by graph.library.items.collectAsStateWithLifecycle()
+    val snapshot by graph.library.galleryState.collectAsStateWithLifecycle()
+    val items = snapshot.items
     val connection by graph.feed.connection.collectAsStateWithLifecycle()
     val settings by graph.settings.settings.collectAsStateWithLifecycle()
-    val actions = remember(graph) { PhotoActions(context.applicationContext, graph.library, graph.uiScope, snackbar) }
+    val accessibility = LocalAccessibilityManager.current
+    val undoMillis = accessibility?.calculateRecommendedTimeoutMillis(10000L, containsText = true, containsControls = true) ?: 10000L
+    val actions =
+        remember(graph, undoMillis) { PhotoActions(context.applicationContext, graph.library, graph.uiScope, snackbar, undoMillis) }
+    val pending by graph.library.undo.pending
+        .collectAsStateWithLifecycle()
+    val deletedMessage = stringResource(R.string.viewer_deleted)
+    val undoLabel = stringResource(R.string.action_undo)
+    LaunchedEffect(pending) {
+        val item = pending ?: return@LaunchedEffect
+        snackbar.currentSnackbarData?.dismiss()
+        val result = snackbar.showSnackbar(deletedMessage, undoLabel, duration = SnackbarDuration.Indefinite)
+        if (result == SnackbarResult.ActionPerformed) graph.uiScope.launch { graph.library.undo.undo(item.id) }
+    }
     val scaffold = rememberBottomSheetScaffoldState()
     val sheet = scaffold.bottomSheetState
     var viewerOrigin by rememberSaveable { mutableStateOf(FILMSTRIP) }
@@ -267,6 +284,7 @@ private fun PairedContent(
                         CaptureScreen(
                             library = graph.library,
                             settingsStore = graph.settings,
+                            pairing = session.pairing,
                             feed = graph.feed,
                             haptics = graph.haptics,
                             appScope = graph.uiScope,
@@ -285,6 +303,7 @@ private fun PairedContent(
                 GlimpseTheme(darkTheme = true) {
                     PhotoViewer(
                         shown = viewerShown,
+                        loaded = snapshot.loadedFor == session.server,
                         items = if (viewerOrigin == FILMSTRIP) todays else items,
                         origin = viewerOrigin,
                         currentId = viewerId,
@@ -317,9 +336,7 @@ private fun PairedContent(
             onUnpair = {
                 settingsOpen = false
                 graph.uiScope.launch {
-                    graph.library.clear()
-                    graph.settings.clear()
-                    graph.sessions.clear()
+                    graph.library.changePairing(null)
                 }
             },
             onBack = { settingsOpen = false },

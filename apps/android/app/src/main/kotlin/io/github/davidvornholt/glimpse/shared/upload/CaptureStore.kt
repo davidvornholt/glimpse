@@ -23,6 +23,7 @@ class CaptureStore(
 ) : CaptureRecords {
     private val mutex = Mutex()
     private val loaded = MutableStateFlow(false)
+    private val interrupted = mutableListOf<CaptureRecord>()
     private val all = MutableStateFlow<Map<String, CaptureRecord>>(emptyMap())
 
     /** Every record, once [load] has run. */
@@ -36,11 +37,6 @@ class CaptureStore(
 
     private fun metaFile(id: String) = File(directory(id), "meta.json")
 
-    /**
-     * Makes the directory a new photo's files go in. The store loads first,
-     * because loading deletes directories without a record, as this one is
-     * until [add] writes it.
-     */
     suspend fun prepare(id: String): File =
         mutex.withLock {
             loadLocked()
@@ -48,6 +44,39 @@ class CaptureStore(
                 directory(id).apply { if (!isDirectory && !mkdirs()) throw IOException("Couldn't make $this") }
             }
         }
+
+    /** Written before CameraX receives its output file. A new process can finish either JPEG. */
+    suspend fun beginCamera(record: CaptureRecord): File {
+        val dir = prepare(record.id)
+        write(record, File(dir, "preparing.json"))
+        return File(dir, "camera.jpg")
+    }
+
+    /** Only records found on the first load, never a camera currently writing its JPEG. */
+    suspend fun interruptedCameras(): List<CaptureRecord> =
+        mutex.withLock {
+            loadLocked()
+            interrupted.toList()
+        }
+
+    suspend fun recoverCameras(
+        finish: suspend (CaptureRecord, File) -> Unit,
+        abandon: suspend (String) -> Unit,
+    ) {
+        for (record in interruptedCameras()) {
+            val raw = File(directory(record.id), "camera.jpg")
+            val jpeg = if (raw.isFile) raw else originalFile(record)
+            if (jpeg.isFile) {
+                try {
+                    finish(record, jpeg)
+                } catch (_: IOException) {
+                    // Keep the journal and JPEG for recovery, including when storage is full.
+                }
+            } else {
+                abandon(record.id)
+            }
+        }
+    }
 
     suspend fun load() {
         mutex.withLock { loadLocked() }
@@ -67,9 +96,10 @@ class CaptureStore(
                             // photo it describes isn't lost with it.
                             read(meta)
                         } else {
-                            // A directory without a record is a capture the process
-                            // died in the middle of.
-                            directory.deleteRecursively()
+                            val preparing = File(directory, "preparing.json")
+                            if (preparing.isFile) read(preparing)?.let(interrupted::add)
+                            // Older captures can have an original but no identifying metadata.
+                            // Keep the only copy even when we cannot reconstruct its record.
                             null
                         }
                     }.associateBy { it.id }
@@ -93,6 +123,7 @@ class CaptureStore(
         mutex.withLock {
             loadLocked()
             write(record)
+            withContext(Dispatchers.IO) { File(directory(record.id), "preparing.json").delete() }
             all.value += record.id to record
         }
 
@@ -145,13 +176,14 @@ class CaptureStore(
         expired.forEach { remove(it.id) }
     }
 
-    private suspend fun write(record: CaptureRecord) =
-        withContext(Dispatchers.IO) {
-            val target = metaFile(record.id)
-            val partial = File(target.parentFile, "meta.json.part")
-            partial.writeText(GlimpseJson.encodeToString(CaptureRecord.serializer(), record))
-            if (!partial.renameTo(target)) throw IOException("Couldn't save the record of ${record.id}")
-        }
+    private suspend fun write(
+        record: CaptureRecord,
+        target: File = metaFile(record.id),
+    ) = withContext(Dispatchers.IO) {
+        val partial = File(target.parentFile, "${target.name}.part")
+        partial.writeText(GlimpseJson.encodeToString(CaptureRecord.serializer(), record))
+        if (!partial.renameTo(target)) throw IOException("Couldn't save the record of ${record.id}")
+    }
 
     private companion object {
         val KEEP_FOR: Duration = Duration.ofDays(31)

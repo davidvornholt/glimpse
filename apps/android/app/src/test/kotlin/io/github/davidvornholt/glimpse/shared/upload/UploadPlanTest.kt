@@ -17,6 +17,29 @@ import kotlin.test.assertNull
 class UploadPlanTest {
     private val fresh = CaptureRecord(TEST_PHOTO_ID, TEST_TIME, PhotoSource.Camera, 4032, 3024, OriginalType.Jpeg)
 
+    @Test
+    fun `an original upload answer cannot turn an agent note into a local removal`() {
+        val uploading = fresh.copy(registered = true, previewSent = true)
+        val answer = UploadPlan.succeeded(uploading, UploadStep.Original, testPhoto(note = "From the agent"))
+        assertNull(UploadPlan.nextStep(answer))
+    }
+
+    @Test
+    fun `explicitly clearing a remote note sends a patch even when the cached note was null`() {
+        val uploaded = fresh.copy(registered = true, previewSent = true, originalSent = true)
+        assertEquals(UploadStep.Note, UploadPlan.nextStep(uploaded.withNote(null)))
+    }
+
+    @Test
+    fun `an acknowledgement in flight leaves a newer edit pending`() {
+        val first = fresh.copy(registered = true).withNote("First")
+        val next = first.withNote(null)
+        val answer = UploadPlan.succeeded(next, UploadStep.Note, testPhoto(note = "First"), first)
+        assertEquals(UploadStep.Note, UploadPlan.nextStep(answer))
+        assertNull(answer.note)
+        assertEquals(UploadStep.Preview, UploadPlan.nextStep(UploadPlan.succeeded(answer, UploadStep.Note, testPhoto(note = null))))
+    }
+
     private fun failed(
         step: UploadStep,
         error: Throwable,
@@ -31,7 +54,7 @@ class UploadPlanTest {
     @Test
     fun `registers, then sends the note, the preview and the original`() {
         assertEquals(UploadStep.Register, UploadPlan.nextStep(fresh))
-        assertEquals(UploadStep.Note, UploadPlan.nextStep(fresh.copy(registered = true, note = "Left one")))
+        assertEquals(UploadStep.Note, UploadPlan.nextStep(fresh.copy(registered = true).withNote("Left one")))
         assertEquals(UploadStep.Preview, UploadPlan.nextStep(fresh.copy(registered = true)))
         assertEquals(UploadStep.Original, UploadPlan.nextStep(fresh.copy(registered = true, previewSent = true)))
         assertNull(UploadPlan.nextStep(fresh.copy(registered = true, previewSent = true, originalSent = true)))

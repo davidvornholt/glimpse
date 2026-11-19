@@ -10,12 +10,37 @@ import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class CaptureStoreTest {
     private val root = Files.createTempDirectory("captures").toFile()
     private val record = CaptureRecord(TEST_PHOTO_ID, TEST_TIME, PhotoSource.Camera, 4032, 3024, OriginalType.Jpeg)
+
+    @Test
+    fun `restart resumes a journaled camera original only until the finished record is saved`() =
+        runTest {
+            val before = CaptureStore(root)
+            before.beginCamera(record)
+            before.originalFile(record).writeText("jpeg")
+            assertTrue(before.interruptedCameras().isEmpty())
+
+            val restarted = CaptureStore(root)
+            val resumed = mutableListOf<String>()
+            restarted.recoverCameras(
+                finish = { pending, jpeg ->
+                    assertEquals(record, pending)
+                    assertEquals("jpeg", jpeg.readText())
+                    restarted.previewFile(pending.id).writeText("preview")
+                    restarted.add(pending)
+                    resumed.add(pending.id)
+                },
+                abandon = { error("The original still exists") },
+            )
+            assertEquals(listOf(record.id), resumed)
+            val again = CaptureStore(root)
+            assertTrue(again.interruptedCameras().isEmpty())
+            assertEquals(record, again.get(record.id))
+        }
 
     @AfterTest
     fun cleanUp() {
@@ -36,14 +61,14 @@ class CaptureStoreTest {
         }
 
     @Test
-    fun `drops a capture the process died in the middle of`() =
+    fun `keeps the only original when a legacy capture has no record`() =
         runTest {
             val unfinished = File(root, "01JD0000000000000000000000").apply { mkdirs() }
             File(unfinished, "original.jpg").writeText("jpeg")
 
             CaptureStore(root).load()
 
-            assertFalse(unfinished.exists())
+            assertTrue(File(unfinished, "original.jpg").isFile)
         }
 
     @Test

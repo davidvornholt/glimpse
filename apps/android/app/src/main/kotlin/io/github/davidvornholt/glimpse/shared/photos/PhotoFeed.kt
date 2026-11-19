@@ -26,6 +26,11 @@ import java.io.IOException
 import java.time.Duration
 import java.time.Instant
 
+data class RemotePhotos(
+    val photos: Map<String, Photo> = emptyMap(),
+    val loadedFor: String? = null,
+)
+
 enum class Connection { Offline, Connecting, Live }
 
 /**
@@ -38,7 +43,7 @@ class PhotoFeed(
     private val apiFor: (Session) -> GlimpseApi,
     private val scope: CoroutineScope,
 ) {
-    private val all = MutableStateFlow<Map<String, Photo>>(emptyMap())
+    private val all = MutableStateFlow(RemotePhotos())
     private val waitingCount = MutableStateFlow(0)
     private val state = MutableStateFlow(Connection.Offline)
     private val listed = MutableSharedFlow<ServerList>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -46,7 +51,7 @@ class PhotoFeed(
     private val newlyViewed = MutableSharedFlow<String>(extraBufferCapacity = 16)
     private var job: Job? = null
 
-    val photos: StateFlow<Map<String, Photo>> = all.asStateFlow()
+    val photos: StateFlow<RemotePhotos> = all.asStateFlow()
 
     /** How many agents wait for a photo with `glimpse wait`. */
     val waiting: StateFlow<Int> = waitingCount.asStateFlow()
@@ -77,11 +82,12 @@ class PhotoFeed(
     private suspend fun follow() {
         sessions.state.collectLatest { session ->
             if (session !is SessionState.Paired) {
-                all.value = emptyMap()
+                all.value = RemotePhotos()
                 waitingCount.value = 0
                 state.value = Connection.Offline
                 return@collectLatest
             }
+            if (all.value.loadedFor != session.session.server) all.value = RemotePhotos()
             val api = apiFor(session.session)
             var backoff = FIRST_BACKOFF
             while (true) {
@@ -139,18 +145,18 @@ class PhotoFeed(
             photos += page.photos
             cursor = page.nextCursor
         } while (cursor != null && photos.size < MAX_PHOTOS)
-        all.value = photos.associateBy { it.id }
+        all.value = RemotePhotos(photos.associateBy { it.id }, session.server)
         if (cursor == null) listed.tryEmit(ServerList(session, photos.mapTo(HashSet()) { it.id }))
     }
 
     fun upsert(photo: Photo) {
-        val previous = all.value[photo.id]
-        all.update { it + (photo.id to photo) }
+        val previous = all.value.photos[photo.id]
+        all.update { it.copy(photos = it.photos + (photo.id to photo)) }
         if (photo.viewedAt != null && previous?.viewedAt == null) newlyViewed.tryEmit(photo.id)
     }
 
     fun forget(id: String) {
-        all.update { it - id }
+        all.update { it.copy(photos = it.photos - id) }
     }
 
     private companion object {
