@@ -57,7 +57,6 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -164,16 +163,16 @@ class PairingBoundaryTest {
         assertEquals(0, kept.noteEdit)
     }
 
-    /** The one capture went to the server again from scratch, under a fresh id the new device owns. */
-    private fun assertUploadedAgain(note: String? = null) {
+    private fun assertFinished(note: String? = null) {
         val uploaded =
             captures.records.value.values
                 .single()
-        assertNotEquals(record.id, uploaded.id)
+        assertEquals(record.id, uploaded.id)
         assertTrue(uploaded.isDone, "$uploaded")
         assertEquals(note, uploaded.note)
+        assertEquals(setOf(record.id), remote.photos.keys)
         val stored = remote.photos.getValue(uploaded.id)
-        assertEquals(FakeServer.Stored(newDevice, uploaded.metadata.copy(note = null), note, "preview", "original"), stored)
+        assertEquals(FakeServer.Stored(old.deviceId, uploaded.metadata.copy(note = null), note, "preview", "original"), stored)
         // The phone deletes its original only once the server has it.
         assertFalse(captures.originalFile(uploaded).exists())
     }
@@ -216,57 +215,58 @@ class PairingBoundaryTest {
             `when`(sessions.lastServer()).thenReturn("$server:443")
             keep(record)
             claimer.claim(link.copy(server = server), "Phone")
-            val kept =
+            assertEquals(
+                record,
                 captures.records.value.values
-                    .single()
-            assertEquals(record, kept.copy(id = record.id))
+                    .single(),
+            )
         }
 
-    @Test fun `a registration without a preview uploads again under the new device`() =
+    @Test fun `a registration without a preview finishes after pairing again`() =
         runTest {
             val claimer = claimer()
-            remote.registerAs(old.deviceId, record)
+            remote.registerAs(old.deviceId, record.copy(note = "caption"))
             keep(record.copy(registered = true, note = "caption", registrations = 1))
             uploadAll(claimer.claim(link.copy(server = server), "Phone"))
-            assertUploadedAgain(note = "caption")
+            assertFinished(note = "caption")
         }
 
-    @Test fun `a photo whose original the old device never sent uploads again under the new device`() =
+    @Test fun `a photo whose original the old device never sent finishes after pairing again`() =
         runTest {
             val claimer = claimer()
             remote.registerAs(old.deviceId, record)
             remote.photos[record.id] = remote.photos.getValue(record.id).copy(preview = "preview")
             keep(record.copy(registered = true, previewSent = true, registrations = 1))
             uploadAll(claimer.claim(link.copy(server = server), "Phone"))
-            assertUploadedAgain()
+            assertFinished()
         }
 
-    @Test fun `a registration whose reply was lost uploads again under the new device`() =
+    @Test fun `a registration whose reply was lost finishes after pairing again`() =
         runTest {
             val claimer = claimer()
             remote.registerAs(old.deviceId, record)
             keep(record)
             uploadAll(claimer.claim(link.copy(server = server), "Phone"))
-            assertUploadedAgain()
+            assertFinished()
         }
 
-    @Test fun `a registration that conflicted uploads again under the new device`() =
+    @Test fun `a registration that conflicted finishes after pairing again`() =
         runTest {
             val claimer = claimer()
             remote.registerAs(old.deviceId, record)
             keep(record.copy(failure = UploadFailure.Conflict))
             uploadAll(claimer.claim(link.copy(server = server), "Phone"))
-            assertUploadedAgain()
+            assertFinished()
         }
 
-    @Test fun `a photo rejected after an earlier pairing uploads again under the new device`() =
+    @Test fun `a photo rejected after an earlier pairing finishes after pairing again`() =
         runTest {
             val claimer = claimer()
             remote.registerAs(old.deviceId, record)
             // Released versions marked the server's 403 for another device as a rejection.
             keep(record.copy(registered = true, failure = UploadFailure.Rejected))
             uploadAll(claimer.claim(link.copy(server = server), "Phone"))
-            assertUploadedAgain()
+            assertFinished()
         }
 
     @Test fun `a fully uploaded photo keeps its id and sends only its new note`() =
@@ -305,14 +305,14 @@ class PairingBoundaryTest {
             sendsOnlyTheNoteOfAnUploadedShare(null)
         }
 
-    @Test fun `an unfinished share finishes uploading under the new device on the same server`() =
+    @Test fun `an unfinished share finishes uploading after pairing again with the same server`() =
         runTest {
             val claimer = claimer()
             val shared = record.copy(source = PhotoSource.Share, server = old.server)
             remote.registerAs(old.deviceId, shared)
             keep(shared.copy(registered = true, registrations = 1))
             uploadAll(claimer.claim(link.copy(server = server), "Phone"))
-            assertUploadedAgain()
+            assertFinished()
         }
 
     @Test fun `a photo waiting for its delete keeps its id, so the delete still finds it`() =
@@ -349,6 +349,72 @@ class PairingBoundaryTest {
             uploadAll(claimer.claim(link.copy(server = server), "Phone"))
             assertEquals(emptyMap(), captures.records.value)
             assertEquals(setOf(record.id), remote.photos.keys)
+        }
+
+    @Test fun `a photo deleted on the server while its original was queued isn't registered again`() =
+        runTest {
+            val claimer = claimer()
+            // Another device deleted it, so the server has nothing under its id any more.
+            keep(record.copy(registered = true, previewSent = true, registrations = 1))
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertEquals(emptyMap(), remote.photos)
+            assertFalse(UploadStep.Register to record.id in remote.requests)
+            assertTrue(
+                captures.records.value.values
+                    .all { it.deletedOnServer },
+            )
+        }
+
+    @Test fun `a note edited on the server stays after pairing again`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record.copy(note = "server caption"))
+            remote.photos[record.id] = remote.photos.getValue(record.id).copy(preview = "preview")
+            val sent =
+                record.copy(
+                    note = "old caption",
+                    serverNote = "old caption",
+                    registered = true,
+                    previewSent = true,
+                    registrations = 1,
+                )
+            keep(sent)
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertFinished(note = "server caption")
+        }
+
+    @Test fun `a photo whose delete was undone after pairing again finishes uploading`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record)
+            keep(record.copy(registered = true, registrations = 1))
+            library.startDelete(record.id, UNDO_MILLIS)
+            val session = claimer.claim(link.copy(server = server), "Phone")
+            `when`(sessions.currentSession()).thenReturn(session)
+            library.undo.undo(record.id)
+            uploadAll(session)
+            advanceTimeBy(UNDO_MILLIS * 2)
+            runCurrent()
+            assertFinished()
+        }
+
+    @Test fun `a photo the server already has a preview of keeps that one`() =
+        runTest {
+            val claimer = claimer()
+            remote.registerAs(old.deviceId, record)
+            remote.photos[record.id] = remote.photos.getValue(record.id).copy(preview = "old preview")
+            // The old device's answer to the preview was lost, so the phone sends it again.
+            keep(record.copy(registered = true, registrations = 1))
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            val stored = remote.photos.getValue(record.id)
+            assertEquals("old preview", stored.preview)
+            assertEquals(old.deviceId, stored.device)
+            assertEquals("original", stored.original)
+            assertTrue(
+                captures.records.value.values
+                    .single()
+                    .isDone,
+            )
         }
 
     @Test fun `switching clears the next photo note`() =
@@ -413,7 +479,10 @@ class PairingBoundaryTest {
         }
 }
 
-/** Keeps photos the way the server does: only the device that registered a photo may send its images. */
+/**
+ * Keeps photos the way the server does: any device may repeat a registration and send an image a photo is
+ * missing, and only the device that registered the photo may replace an image it has.
+ */
 private class FakeServer(
     private val captures: CaptureStore,
 ) {
@@ -449,7 +518,7 @@ private class FakeServer(
                 val existing = photos[record.id]
                 if (existing == null) {
                     registerAs(device, record)
-                } else if (existing.device != device || existing.metadata != record.metadata.copy(note = null)) {
+                } else if (existing.metadata != record.metadata.copy(note = null)) {
                     throw ApiException(409, ApiErrorTag.Conflict, "Photo ${record.id} already exists with other details.")
                 }
                 return photo(record.id)
@@ -465,26 +534,26 @@ private class FakeServer(
             override suspend fun putPreview(
                 record: CaptureRecord,
                 onProgress: (Long, Long) -> Unit,
-            ): Photo = send(UploadStep.Preview, record) { it.copy(preview = bytes(captures.previewFile(record.id))) }
+            ): Photo =
+                send(UploadStep.Preview, record, { it.preview != null }) { it.copy(preview = bytes(captures.previewFile(record.id))) }
 
             override suspend fun putOriginal(
                 record: CaptureRecord,
                 onProgress: (Long, Long) -> Unit,
-            ): Photo = send(UploadStep.Original, record) { it.copy(original = bytes(captures.originalFile(record))) }
+            ): Photo =
+                send(UploadStep.Original, record, { it.original != null }) { it.copy(original = bytes(captures.originalFile(record))) }
 
             override suspend fun exists(record: CaptureRecord): Boolean = record.id in photos
 
             private fun send(
                 step: UploadStep,
                 record: CaptureRecord,
+                has: (Stored) -> Boolean,
                 change: (Stored) -> Stored,
             ): Photo {
                 requests += step to record.id
                 val existing = stored(record.id)
-                if (existing.device != device) {
-                    throw ApiException(403, ApiErrorTag.Forbidden, "Photo ${record.id} was registered by another phone.")
-                }
-                photos[record.id] = change(existing)
+                if (existing.device == device || !has(existing)) photos[record.id] = change(existing)
                 return photo(record.id)
             }
 
