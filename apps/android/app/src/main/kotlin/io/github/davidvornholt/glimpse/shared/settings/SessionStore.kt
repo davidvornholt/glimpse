@@ -11,7 +11,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -52,7 +51,7 @@ class SessionStore(
             context.preferencesDataStoreFile("session")
         }
 
-    val state: StateFlow<SessionState> =
+    private val storedState =
         store.data
             .map { preferences ->
                 val server = preferences[SERVER]
@@ -65,10 +64,12 @@ class SessionStore(
                 } else {
                     SessionState.Unpaired(removedFrom = server.takeIf { preferences[REMOVED] == true })
                 }
-            }.stateIn(scope, SharingStarted.Eagerly, SessionState.Loading)
+            }
+
+    val state: StateFlow<SessionState> = storedState.stateIn(scope, SharingStarted.Eagerly, SessionState.Loading)
 
     /** Waits for the stored state, for code that runs before any screen. */
-    suspend fun current(): SessionState = state.filterNot { it is SessionState.Loading }.first()
+    suspend fun current(): SessionState = storedState.first()
 
     suspend fun currentSession(): Session? = (current() as? SessionState.Paired)?.session
 

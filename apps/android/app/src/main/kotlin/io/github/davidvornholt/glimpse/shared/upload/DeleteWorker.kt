@@ -13,14 +13,19 @@ import androidx.work.workDataOf
 import io.github.davidvornholt.glimpse.GlimpseApp
 import io.github.davidvornholt.glimpse.shared.api.ApiErrorTag
 import io.github.davidvornholt.glimpse.shared.api.ApiException
+import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
+import io.github.davidvornholt.glimpse.shared.settings.Session
+import io.github.davidvornholt.glimpse.shared.settings.SessionState
+import io.github.davidvornholt.glimpse.shared.settings.SessionStore
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import java.io.IOException
 import java.time.Duration
 
 /** Deletes photos on the server, waiting for a network when there is none. */
 class DeleteScheduler(
     context: Context,
+    sessions: SessionStore,
 ) {
     private val workManager = WorkManager.getInstance(context)
 
@@ -30,30 +35,43 @@ class DeleteScheduler(
      * them back in the meantime.
      */
     val pending: Flow<Set<String>> =
-        workManager.getWorkInfosByTagFlow(TAG).map { works ->
+        combine(workManager.getWorkInfosByTagFlow(TAG), sessions.state) { works, state ->
+            val server = (state as? SessionState.Paired)?.session?.server ?: return@combine emptySet()
+            val serverTag = serverTag(server)
             works
-                .filterNot { it.state.isFinished }
+                .filter { !it.state.isFinished && serverTag in it.tags }
                 .mapNotNull { work -> work.tags.firstOrNull { it.startsWith(PHOTO_TAG) }?.removePrefix(PHOTO_TAG) }
                 .toSet()
         }
 
-    fun enqueue(id: String) {
+    fun enqueue(
+        id: String,
+        server: String,
+    ) {
         val request =
             OneTimeWorkRequestBuilder<DeleteWorker>()
-                .setInputData(workDataOf(DeleteWorker.KEY_ID to id))
+                .setInputData(workDataOf(DeleteWorker.KEY_ID to id, DeleteWorker.KEY_SERVER to server))
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, Duration.ofSeconds(10))
                 .addTag(TAG)
+                .addTag(serverTag(server))
                 .addTag(PHOTO_TAG + id)
                 .build()
-        workManager.enqueueUniqueWork("delete-$id", ExistingWorkPolicy.KEEP, request)
+        workManager.enqueueUniqueWork("delete-$server-$id", ExistingWorkPolicy.KEEP, request)
     }
+
+    private fun serverTag(server: String) = "delete-server:" + PairingLink.normalizeServer(server, allowCleartext = true)
 
     private companion object {
         const val TAG = "delete"
         const val PHOTO_TAG = "delete-photo:"
     }
 }
+
+internal fun deletionSession(
+    origin: String?,
+    current: Session?,
+): Session? = current?.takeIf { origin != null && PairingLink.sameServer(it.server, origin) }
 
 class DeleteWorker(
     context: Context,
@@ -62,7 +80,8 @@ class DeleteWorker(
     override suspend fun doWork(): Result {
         val id = inputData.getString(KEY_ID) ?: return Result.failure()
         val graph = (applicationContext as GlimpseApp).graph
-        val session = graph.sessions.currentSession() ?: return Result.failure()
+        // Older work carries no server. Its destination cannot be recovered safely.
+        val session = deletionSession(inputData.getString(KEY_SERVER), graph.sessions.currentSession()) ?: return Result.success()
         return try {
             graph.api(session).delete(id)
             Result.success()
@@ -93,5 +112,6 @@ class DeleteWorker(
 
     companion object {
         const val KEY_ID = "id"
+        const val KEY_SERVER = "server"
     }
 }

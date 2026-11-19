@@ -1,6 +1,7 @@
 package io.github.davidvornholt.glimpse.shared.upload
 
 import io.github.davidvornholt.glimpse.shared.api.GlimpseJson
+import io.github.davidvornholt.glimpse.shared.api.OriginalType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,6 +12,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.time.Instant
 
@@ -65,7 +68,11 @@ class CaptureStore(
                         if (meta.isFile) {
                             // A record this version can't read stays on disk, so the
                             // photo it describes isn't lost with it.
-                            read(meta)
+                            read(meta)?.let { record ->
+                                // Renaming the directory commits a new registration even if the
+                                // process stops before its metadata can be rewritten.
+                                if (record.id == directory.name) record else record.freshRegistration(directory.name)
+                            }
                         } else {
                             // A directory without a record is a capture the process
                             // died in the middle of.
@@ -121,6 +128,28 @@ class CaptureStore(
             next
         }
 
+    /**
+     * Moves a photo and both its image files to [newId], so its upload starts again from scratch.
+     * A worker for the old id can no longer edit the record.
+     */
+    suspend fun renewRegistration(
+        id: String,
+        newId: String,
+    ): CaptureRecord? =
+        mutex.withLock {
+            loadLocked()
+            val record = all.value[id] ?: return@withLock null
+            val fresh = record.freshRegistration(newId)
+            withContext(Dispatchers.IO) {
+                Files.move(directory(id).toPath(), directory(newId).toPath(), StandardCopyOption.ATOMIC_MOVE)
+                all.value = all.value - id + (newId to fresh)
+            }
+            fresh
+        }
+
+    private fun CaptureRecord.freshRegistration(newId: String) =
+        CaptureRecord(newId, takenAt, source, width, height, originalType, note, batchId)
+
     suspend fun remove(id: String) =
         mutex.withLock {
             loadLocked()
@@ -130,9 +159,28 @@ class CaptureStore(
 
     suspend fun clear() =
         mutex.withLock {
+            withContext(Dispatchers.IO) {
+                if (root.exists() && !root.deleteRecursively()) throw IOException("Couldn't clear captures")
+            }
             all.value = emptyMap()
-            withContext(Dispatchers.IO) { root.deleteRecursively() }
             loaded.value = true
+        }
+
+    /**
+     * How many originals [clear] would delete that the server doesn't have. A directory whose
+     * record can't be read counts when it holds an original, and a record whose original is
+     * gone doesn't. An original the server refused as too large stays here and counts.
+     */
+    suspend fun unsentOriginals(): Int =
+        mutex.withLock {
+            loadLocked()
+            withContext(Dispatchers.IO) {
+                root.listFiles().orEmpty().count { directory ->
+                    val record = all.value[directory.name]
+                    val held = OriginalType.entries.any { File(directory, "original.${it.extension}").isFile }
+                    held && record?.originalSent != true && record?.deletedOnServer != true
+                }
+            }
         }
 
     /** Drops uploaded photos the server has deleted by now. */
