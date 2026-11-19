@@ -124,25 +124,33 @@ describe('pairing a phone', () => {
 });
 
 describe('an oversized claim', () => {
-  it('refuses an oversized claim that states its length', async () => {
-    const body = JSON.stringify({
-      code: 'x'.repeat(maxJsonBodyBytes),
-      deviceName: 'Pixel',
-    });
+  it('refuses an oversized claim that states its length before reading it', async () => {
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull: (controller) => {
+          pulls += 1;
+          controller.enqueue(new Uint8Array(maxJsonBodyBytes + 1));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
     const response = await server.fetch('/v1/pairings/claim', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'content-length': String(body.length),
+        'content-length': String(maxJsonBodyBytes + 1),
       },
       body,
-    });
+      duplex: 'half',
+    } as RequestInit);
     expect(response.status).toBe(413);
     expect(await response.json()).toMatchObject({ error: { tag: 'TooLarge' } });
+    expect(pulls).toBe(0);
   });
 
   it('stops reading an oversized claim that does not state its length', async () => {
-    // Far more than the limit, so a server that reads it all is caught.
     const offered = 64 * maxJsonBodyBytes;
     let sent = 0;
     const chunk = new TextEncoder().encode('x'.repeat(4096));
