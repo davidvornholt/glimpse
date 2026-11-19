@@ -9,6 +9,7 @@ import io.github.davidvornholt.glimpse.shared.api.ApiException
 import io.github.davidvornholt.glimpse.shared.api.GlimpseApi
 import io.github.davidvornholt.glimpse.shared.api.Photo
 import java.io.File
+import java.io.IOException
 
 /** Uploads one photo, picking up wherever an earlier run stopped. */
 class UploadWorker(
@@ -22,11 +23,17 @@ class UploadWorker(
         val api = graph.api(session)
         val store = graph.captures
         // The server's answers go to the feed too, so the photo shows the note the phone just sent.
-        val target = ApiTarget(api, store) { photo -> if (photo.readyAt != null) graph.feed.upsert(photo) }
+        val target = ApiTarget(api, store, session.deviceId) { photo -> if (photo.readyAt != null) graph.feed.upsert(session, photo) }
         val runner = UploadRunner(target, store, graph.uploads::reportProgress)
         val outcome =
             try {
+                if (graph.library.recoverRegistration(id, session)) return Result.success()
                 runner.run(id)
+            } catch (error: ApiException) {
+                if (error.tag == ApiErrorTag.Unauthorized) graph.sessions.markRemoved(session.token)
+                return if (error.isTransient) Result.retry() else Result.failure()
+            } catch (_: IOException) {
+                return Result.retry()
             } finally {
                 graph.uploads.finished(id)
             }
@@ -53,9 +60,13 @@ class UploadWorker(
     private class ApiTarget(
         private val api: GlimpseApi,
         private val store: CaptureStore,
+        private val deviceId: String,
         private val answered: (Photo) -> Unit,
     ) : UploadTarget {
-        override suspend fun register(record: CaptureRecord): Photo = api.register(record.id, record.metadata).photo.also(answered)
+        override suspend fun register(record: CaptureRecord): Photo {
+            store.update(record.id) { it.copy(registrationDevice = deviceId) } ?: throw MissingFileException(store.directory(record.id))
+            return api.register(record.id, record.metadata).photo.also(answered)
+        }
 
         override suspend fun setNote(record: CaptureRecord): Photo = api.setNote(record.id, record.note).also(answered)
 

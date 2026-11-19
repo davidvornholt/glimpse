@@ -80,10 +80,20 @@ data class PairingLink(
             if (scheme != "https" && !(allowCleartext && scheme == "http")) return null
             if (uri.host.isNullOrEmpty() || uri.rawUserInfo != null) return null
             if (uri.rawQuery != null || uri.rawFragment != null) return null
-            val port = if (uri.port == -1) "" else ":${uri.port}"
-            val path = uri.rawPath.orEmpty().trimEnd('/')
-            // java.net.URI takes ports OkHttp refuses, such as 0 and 65536.
-            return "$scheme://${uri.host.lowercase()}$port$path".takeIf { it.toHttpUrlOrNull() != null }
+            return uri
+                .toString()
+                .toHttpUrlOrNull()
+                ?.toString()
+                ?.trimEnd('/')
+        }
+
+        /** Includes the base path, also for URLs persisted by older app versions. */
+        fun sameServer(
+            first: String,
+            second: String,
+        ): Boolean {
+            val base = normalizeServer(first, allowCleartext = true) ?: return false
+            return base == normalizeServer(second, allowCleartext = true)
         }
     }
 }

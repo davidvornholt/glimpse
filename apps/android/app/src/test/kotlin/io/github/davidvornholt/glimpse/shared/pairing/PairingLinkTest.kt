@@ -76,6 +76,11 @@ class PairingLinkTest {
     }
 
     @Test
+    fun `default HTTPS port is the same endpoint`() {
+        assertEquals("https://glimpse.example.com", parse("glimpse://pair?server=$server%3A443&code=abc")?.server)
+    }
+
+    @Test
     fun `normalizes the server to a base URL`() {
         assertEquals(
             "https://glimpse.example.com:8443/glimpse",

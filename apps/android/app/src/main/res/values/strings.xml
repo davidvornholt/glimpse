@@ -127,7 +127,12 @@
     <string name="pairing_device_name_hint">Up to 64 characters</string>
     <string name="pairing_device_name_invalid">Enter a name for this phone</string>
     <string name="pairing_again">This phone is already paired with %1$s. Pairing again gives it a new token; remove the old entry with glimpse devices remove.</string>
-    <string name="pairing_replace">This phone is paired with %1$s. Pairing here ends that pairing and clears its photos from this phone.</string>
+    <string name="unpair_clear_failed">Could not finish clearing this phone. Try unpairing again.</string>
+    <string name="pairing_replace">Pairing here will remove this phone’s copies of photos from %1$s.</string>
+    <plurals name="pairing_unsent">
+        <item quantity="one">%d original has not finished uploading and will be lost.</item>
+        <item quantity="other">%d originals have not finished uploading and will be lost.</item>
+    </plurals>
     <string name="pairing_pair">Pair</string>
     <string name="pairing_claiming">Pairing with %1$s…</string>
     <string name="pairing_failed_title">Couldn’t pair</string>

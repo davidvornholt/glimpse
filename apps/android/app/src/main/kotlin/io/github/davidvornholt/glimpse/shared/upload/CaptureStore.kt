@@ -11,6 +11,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.time.Instant
 
@@ -65,7 +67,11 @@ class CaptureStore(
                         if (meta.isFile) {
                             // A record this version can't read stays on disk, so the
                             // photo it describes isn't lost with it.
-                            read(meta)
+                            read(meta)?.let { record ->
+                                // Renaming the directory commits a new registration even if the
+                                // process stops before its metadata can be rewritten.
+                                if (record.id == directory.name) record else record.freshRegistration(directory.name)
+                            }
                         } else {
                             // A directory without a record is a capture the process
                             // died in the middle of.
@@ -121,6 +127,33 @@ class CaptureStore(
             next
         }
 
+    /** Moves both image files together. A worker for the old id can no longer edit the record. */
+    suspend fun renewRegistration(
+        id: String,
+        newId: String,
+    ): CaptureRecord? =
+        mutex.withLock {
+            loadLocked()
+            val record = all.value[id] ?: return@withLock null
+            if (record.previewSent) return@withLock record
+            val fresh = record.freshRegistration(newId)
+            withContext(Dispatchers.IO) {
+                Files.move(directory(id).toPath(), directory(newId).toPath(), StandardCopyOption.ATOMIC_MOVE)
+                all.value = all.value - id + (newId to fresh)
+            }
+            fresh
+        }
+
+    private fun CaptureRecord.freshRegistration(newId: String) =
+        copy(
+            id = newId,
+            registered = false,
+            registrationDevice = null,
+            registrations = 0,
+            serverNote = null,
+            failure = null,
+        )
+
     suspend fun remove(id: String) =
         mutex.withLock {
             loadLocked()
@@ -130,8 +163,10 @@ class CaptureStore(
 
     suspend fun clear() =
         mutex.withLock {
+            withContext(Dispatchers.IO) {
+                if (root.exists() && !root.deleteRecursively()) throw IOException("Couldn't clear captures")
+            }
             all.value = emptyMap()
-            withContext(Dispatchers.IO) { root.deleteRecursively() }
             loaded.value = true
         }
 

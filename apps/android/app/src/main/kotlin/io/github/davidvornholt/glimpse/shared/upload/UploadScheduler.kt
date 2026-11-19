@@ -8,6 +8,7 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
+import androidx.work.await
 import androidx.work.workDataOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,8 +60,8 @@ class UploadScheduler(
         finished(id)
     }
 
-    fun cancelAll() {
-        workManager.cancelAllWorkByTag(TAG)
+    suspend fun cancelAll() {
+        workManager.cancelAllWorkByTag(TAG).await()
         running.value = emptyMap()
     }
 

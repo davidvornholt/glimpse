@@ -18,7 +18,9 @@ import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
 import io.github.davidvornholt.glimpse.shared.upload.CaptureStore
 import io.github.davidvornholt.glimpse.shared.upload.DeleteScheduler
 import io.github.davidvornholt.glimpse.shared.upload.UploadScheduler
+import io.github.davidvornholt.glimpse.shared.upload.deletionSession
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +28,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.time.Instant
@@ -54,8 +59,11 @@ class PhotoLibrary(
     private val ids: UlidGenerator,
     private val apiFor: (Session) -> GlimpseApi,
     private val cacheDir: File,
+    private val revokeShare: (File) -> Unit,
     scope: CoroutineScope,
 ) {
+    private val exports = Mutex()
+    private val sharedDir = File(cacheDir, "shared")
     private val pending = MutableStateFlow<Map<String, PendingCapture>>(emptyMap())
     private val hidden = MutableStateFlow<Set<String>>(emptySet())
 
@@ -79,7 +87,7 @@ class PhotoLibrary(
             captures.prune()
             // An upload whose work was lost, for example because the process died
             // before it was queued, carries on.
-            if (sessions.currentSession() != null) resumeUploads()
+            sessions.currentSession()?.let { resumeUploads(it.deviceId) }
         }
     }
 
@@ -254,7 +262,7 @@ class PhotoLibrary(
         }
         val session = sessions.currentSession() ?: return
         try {
-            feed.upsert(apiFor(session).setNote(id, cleaned))
+            feed.upsert(session, apiFor(session).setNote(id, cleaned))
         } catch (error: ApiException) {
             if (error.tag == ApiErrorTag.Unauthorized) sessions.markRemoved(session.token)
             throw error
@@ -262,8 +270,10 @@ class PhotoLibrary(
     }
 
     /** Takes a photo out of every list at once; [delete] or [restore] decides later. */
-    fun hide(id: String) {
+    fun hide(id: String): String? {
+        val server = (sessions.state.value as? SessionState.Paired)?.session?.server ?: return null
         hidden.update { it + id }
+        return server
     }
 
     fun restore(id: String) {
@@ -271,9 +281,13 @@ class PhotoLibrary(
     }
 
     /** Deletes a photo. It stays hidden until the server has it deleted. */
-    suspend fun delete(id: String) {
+    suspend fun delete(
+        id: String,
+        server: String,
+    ) {
+        if (deletionSession(server, sessions.currentSession()) == null) return
         // Queued first, so the server hears of it even when the process dies right after.
-        deletes.enqueue(id)
+        deletes.enqueue(id, server)
         uploads.cancel(id)
         captures.remove(id)
         feed.forget(id)
@@ -288,7 +302,7 @@ class PhotoLibrary(
      * The best copy of a photo as a file: the phone's original while it has
      * one, otherwise the server's original or preview, downloaded to the cache.
      */
-    suspend fun fileFor(item: GalleryItem): Pair<File, OriginalType> {
+    private suspend fun fileFor(item: GalleryItem): Pair<File, OriginalType> {
         val record = captures.get(item.id)
         if (record != null) {
             val original = captures.originalFile(record)
@@ -296,7 +310,7 @@ class PhotoLibrary(
         }
         val session = sessions.currentSession() ?: throw IOException("Not paired")
         val api = apiFor(session)
-        val directory = File(cacheDir, "shared").apply { mkdirs() }
+        val directory = sharedDir.apply { mkdirs() }
         val remote = feed.photos.value[item.id]
         return if (remote?.hasOriginal != false) {
             val target = File(directory, "glimpse-${item.id}.${item.originalType.extension}")
@@ -324,24 +338,93 @@ class PhotoLibrary(
         return target to OriginalType.Jpeg
     }
 
-    suspend fun saveToGallery(item: GalleryItem) {
+    suspend fun shareFile(
+        item: GalleryItem,
+        send: (File, OriginalType) -> Unit,
+    ) = exports.withLock {
         val (file, type) = fileFor(item)
-        gallery.save(file, type.mimeType, "glimpse-${item.id}.${type.extension}")
+        val copy =
+            withContext(Dispatchers.IO) {
+                sharedDir.mkdirs()
+                val target = File(sharedDir, "glimpse-${item.id}.${type.extension}")
+                if (file != target) file.copyTo(target, overwrite = true)
+                target
+            }
+        send(copy, type)
     }
+
+    suspend fun saveToGallery(item: GalleryItem) =
+        exports.withLock {
+            val (file, type) = fileFor(item)
+            gallery.save(file, type.mimeType, "glimpse-${item.id}.${type.extension}")
+        }
 
     /** Forgets every photo on the phone, for unpairing. */
     suspend fun clear() {
         uploads.cancelAll()
         captures.clear()
+        exports.withLock {
+            withContext(Dispatchers.IO) {
+                sharedDir
+                    .listFiles()
+                    .orEmpty()
+                    .filter { it.isFile }
+                    .forEach(revokeShare)
+                if (sharedDir.exists() && !sharedDir.deleteRecursively()) throw IOException("Couldn't clear shared photos")
+            }
+        }
+        settings.setPendingNote(null)
+        feed.clear()
         pending.value = emptyMap()
         hidden.value = emptySet()
     }
 
+    suspend fun unsentCount(): Int {
+        captures.load()
+        return captures.records.value.values
+            .count { !it.originalSent && !it.deletedOnServer }
+    }
+
+    suspend fun prepareForNewDevice(previousDevice: String?) {
+        uploads.cancelAll()
+        captures.load()
+        // Older records predate registrationDevice. The stored device id survives removal.
+        captures.records.value.values.filter { it.registered && !it.previewSent && it.registrationDevice == null }.forEach { record ->
+            captures.update(record.id) { it.copy(registrationDevice = previousDevice.orEmpty()) }
+        }
+    }
+
+    /** A lost preview reply is possible. Check the server before creating another visible photo. */
+    suspend fun recoverRegistration(
+        id: String,
+        session: Session,
+    ): Boolean {
+        val record = captures.get(id) ?: return false
+        if (!record.needsNewRegistration(session.deviceId)) return false
+        val photo =
+            try {
+                apiFor(session).photo(id)
+            } catch (error: ApiException) {
+                if (error.tag != ApiErrorTag.NotFound) throw error
+                null
+            }
+        if (photo?.readyAt != null) {
+            captures.update(id) {
+                it.copy(registered = true, previewSent = true, originalSent = photo.hasOriginal, serverNote = photo.note, failure = null)
+            }
+            return false
+        }
+        val fresh = captures.renewRegistration(id, ids.next()) ?: return true
+        if (fresh.id == id) return false
+        uploads.resume(fresh.id)
+        return true
+    }
+
     /** Queues every unfinished upload that has no work, such as those that waited while the phone was unpaired. */
-    suspend fun resumeUploads() {
+    suspend fun resumeUploads(deviceId: String) {
         captures.load()
         captures.records.value.values
-            .filter { !it.isDone && it.failure == null }
+            .filter { (!it.isDone && it.failure == null) || it.needsNewRegistration(deviceId) }
             .forEach { uploads.resume(it.id) }
     }
 }

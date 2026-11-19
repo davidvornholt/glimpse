@@ -1,6 +1,8 @@
 package io.github.davidvornholt.glimpse
 
 import android.content.Context
+import android.content.Intent
+import androidx.core.content.FileProvider
 import io.github.davidvornholt.glimpse.shared.api.GlimpseApi
 import io.github.davidvornholt.glimpse.shared.api.isOnServer
 import io.github.davidvornholt.glimpse.shared.haptics.Haptics
@@ -46,7 +48,7 @@ class AppGraph(
     val settings = SettingsStore(context, scope)
     val captures = CaptureStore(File(context.filesDir, "captures"))
     val uploads = UploadScheduler(context)
-    val deletes = DeleteScheduler(context)
+    val deletes = DeleteScheduler(context, sessions)
     val haptics = Haptics(context)
     val feed = PhotoFeed(sessions, ::api, scope)
     val processor = ImageProcessor(context.contentResolver)
@@ -64,6 +66,11 @@ class AppGraph(
             ids = UlidGenerator(),
             apiFor = ::api,
             cacheDir = context.cacheDir,
+            revokeShare = { file ->
+                val uri =
+                    FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                context.revokeUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            },
             scope = scope,
         )
 

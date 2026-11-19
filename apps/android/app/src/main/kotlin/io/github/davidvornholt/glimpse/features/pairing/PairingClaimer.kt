@@ -35,6 +35,16 @@ class PairingClaimer(
     private val sessions: SessionStore,
     private val library: PhotoLibrary,
 ) {
+    data class SwitchWarning(
+        val previous: String,
+        val unsent: Int,
+    )
+
+    suspend fun switchWarning(link: PairingLink): SwitchWarning? {
+        val previous = sessions.lastServer() ?: return null
+        return if (PairingLink.sameServer(previous, link.server)) null else SwitchWarning(previous, library.unsentCount())
+    }
+
     suspend fun claim(
         link: PairingLink,
         deviceName: String,
@@ -42,10 +52,16 @@ class PairingClaimer(
         val result = anonymousApi(link.server).claim(link.code, deviceName.trim())
         // Photos waiting for another server don't belong on this one.
         val previous = sessions.lastServer()
-        if (previous != null && previous != link.server) library.clear()
+        if (previous != null) {
+            if (PairingLink.sameServer(previous, link.server)) {
+                library.prepareForNewDevice(sessions.lastDeviceId())
+            } else {
+                library.clear()
+            }
+        }
         val session = Session(link.server, result.token, result.device.id, result.device.name)
         sessions.save(session)
-        library.resumeUploads()
+        library.resumeUploads(session.deviceId)
         return session
     }
 

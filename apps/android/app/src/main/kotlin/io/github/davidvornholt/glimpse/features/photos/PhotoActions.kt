@@ -13,10 +13,7 @@ import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
 import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 import java.io.IOException
 
 /**
@@ -53,17 +50,17 @@ class PhotoActions(
     ) {
         scope.launch {
             try {
-                val (file, type) = library.fileFor(item)
-                val shared = withContext(Dispatchers.IO) { shareableCopy(file, "glimpse-${item.id}.${type.extension}") }
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", shared)
-                val send =
-                    Intent(Intent.ACTION_SEND)
-                        .setType(type.mimeType)
-                        .putExtra(Intent.EXTRA_STREAM, uri)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                send.clipData = ClipData.newRawUri(null, uri)
-                item.note?.let { send.putExtra(Intent.EXTRA_TEXT, it) }
-                from.startActivity(Intent.createChooser(send, null))
+                library.shareFile(item) { shared, type ->
+                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", shared)
+                    val send =
+                        Intent(Intent.ACTION_SEND)
+                            .setType(type.mimeType)
+                            .putExtra(Intent.EXTRA_STREAM, uri)
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    send.clipData = ClipData.newRawUri(null, uri)
+                    item.note?.let { send.putExtra(Intent.EXTRA_TEXT, it) }
+                    from.startActivity(Intent.createChooser(send, null))
+                }
             } catch (_: IOException) {
                 snackbar.showSnackbar(message(R.string.viewer_share_failed))
             } catch (_: ApiException) {
@@ -74,7 +71,7 @@ class PhotoActions(
 
     /** Hides the photo at once and deletes it unless the user undoes it in time. */
     fun delete(item: GalleryItem) {
-        library.hide(item.id)
+        val server = library.hide(item.id) ?: return
         // Only one undo waits at a time: a new delete settles the one before.
         snackbar.currentSnackbarData?.dismiss()
         scope.launch {
@@ -89,7 +86,7 @@ class PhotoActions(
                     library.restore(item.id)
                     throw error
                 }
-            if (result == SnackbarResult.ActionPerformed) library.restore(item.id) else library.delete(item.id)
+            if (result == SnackbarResult.ActionPerformed) library.restore(item.id) else library.delete(item.id, server)
         }
     }
 
@@ -110,16 +107,5 @@ class PhotoActions(
 
     fun retry(item: GalleryItem) {
         scope.launch { library.retry(item.id) }
-    }
-
-    /** Copies into the folder the file provider shares, so only that copy leaves the app. */
-    private fun shareableCopy(
-        file: File,
-        name: String,
-    ): File {
-        val directory = File(context.cacheDir, "shared").apply { mkdirs() }
-        val target = File(directory, name)
-        if (file.canonicalPath != target.canonicalPath) file.copyTo(target, overwrite = true)
-        return target
     }
 }
