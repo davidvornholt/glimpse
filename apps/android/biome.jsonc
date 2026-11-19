@@ -1,0 +1,15 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  // Inherits the repository configuration. The release tooling runs only in
+  // Bun, from the release workflow and the tests, so the `Bun` global exists.
+  "root": false,
+  "extends": "//",
+  "overrides": [
+    {
+      "includes": ["src/**"],
+      "javascript": {
+        "globals": ["Bun"]
+      }
+    }
+  ]
+}

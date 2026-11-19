@@ -11,6 +11,15 @@
         "typescript": "7.0.2",
       },
     },
+    "apps/android": {
+      "name": "@glimpse/android",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@davidvornholt/typescript-config": "workspace:*",
+        "@types/bun": "^1.4.3",
+        "typescript": "7.0.2",
+      },
+    },
     "apps/cli": {
       "name": "@glimpse/cli",
       "version": "0.0.0",
@@ -109,6 +118,8 @@
     "@effect/platform-bun": ["@effect/platform-bun@4.1.4", "", { "dependencies": { "@effect/platform-node-shared": "4.1.4" }, "peerDependencies": { "effect": "^4.1.4" } }, "sha512-Vdq82GOrD5HVF43aXVwHeX+4uIOrgAnjju9MEyizzFZ3yt3A6x9prtmHej1q/zAOaeNddtkpPr2ExHEvZ13S6Q=="],
 
     "@effect/platform-node-shared": ["@effect/platform-node-shared@4.1.4", "", { "dependencies": { "@types/ws": "^8.18.2", "ws": "^8.22.1" }, "peerDependencies": { "effect": "^4.1.4" } }, "sha512-DWdfphHGOFJNj/mYadgpT3jIm8aRXDcPrQiGXFBH4p2H4XmA7iYMrPsI8NxVgZ7kNX0q1+FGJZJama0tINHRAg=="],
+
+    "@glimpse/android": ["@glimpse/android@workspace:apps/android"],
 
     "@glimpse/api": ["@glimpse/api@workspace:packages/api"],
 

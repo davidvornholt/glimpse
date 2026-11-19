@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="share_target_label">An Agent senden</string>
+    <string name="tile_label">Glimpse</string>
+    <string name="shortcut_photo">Foto</string>
+    <string name="shortcut_photo_long">Foto aufnehmen</string>
+    <string name="shortcut_scan">Scan</string>
+    <string name="shortcut_scan_long">Dokument scannen</string>
+
+    <!-- Shared actions -->
+    <string name="action_back">Zurück</string>
+    <string name="action_cancel">Abbrechen</string>
+    <string name="action_close">Schließen</string>
+    <string name="action_undo">Rückgängig</string>
+
+    <!-- Camera permission -->
+    <string name="camera_permission_title">Glimpse braucht die Kamera</string>
+    <string name="camera_permission_body">Erlaube den Kamerazugriff, um Fotos für deinen Agent aufzunehmen.</string>
+    <string name="camera_allow">Kamera erlauben</string>
+    <string name="camera_open_settings">Einstellungen öffnen</string>
+
+    <!-- Capture -->
+    <string name="capture_take_photo">Foto aufnehmen</string>
+    <string name="capture_scan">Dokument scannen</string>
+    <string name="capture_mode_photo">Foto</string>
+    <string name="capture_mode_scan">Scan</string>
+    <string name="capture_inbox">Gesendete Fotos</string>
+    <string name="capture_note">Notiz hinzufügen</string>
+    <string name="capture_settings">Einstellungen</string>
+    <string name="capture_flash_off">Blitz aus</string>
+    <string name="capture_flash_auto">Blitz automatisch</string>
+    <string name="capture_flash_on">Blitz an</string>
+    <string name="capture_zoom">%1$.1f×</string>
+    <string name="capture_zoom_reset">Zoom von %1$.1f× zurücksetzen</string>
+    <string name="capture_note_pending">Nächstes Foto: %1$s</string>
+    <string name="capture_note_discard">Notiz verwerfen</string>
+    <string name="capture_failed">Das Foto ließ sich nicht aufnehmen. Versuch es noch einmal.</string>
+    <string name="scan_failed">Der Scan ließ sich nicht hinzufügen. Scanne noch einmal.</string>
+    <plurals name="scan_partial">
+        <item quantity="one">%1$d von %2$d Seite hinzugefügt. Scanne die fehlenden noch einmal.</item>
+        <item quantity="other">%1$d von %2$d Seiten hinzugefügt. Scanne die fehlenden noch einmal.</item>
+    </plurals>
+    <string name="scanner_unavailable">Der Dokumentscanner ist noch nicht bereit. Aktualisiere die Google Play-Dienste und versuch es dann noch einmal.</string>
+    <string name="status_offline">Offline</string>
+    <plurals name="agents_waiting">
+        <item quantity="one">%d Agent wartet</item>
+        <item quantity="other">%d Agents warten</item>
+    </plurals>
+
+    <!-- Notes -->
+    <string name="note_title">Notiz</string>
+    <string name="note_for_next">Nächstes Foto</string>
+    <string name="note_for_last">Letztes Foto</string>
+    <string name="note_label">Was soll dein Agent wissen?</string>
+    <string name="note_dictate">Diktieren</string>
+    <string name="note_dictation_prompt">Sprich deine Notiz</string>
+    <string name="note_counter">%1$d/%2$d</string>
+    <string name="note_save">Speichern</string>
+    <string name="note_remove">Notiz entfernen</string>
+    <string name="note_save_failed">Die Notiz ließ sich nicht speichern. Prüfe deine Verbindung und versuch es noch einmal.</string>
+
+    <!-- Days -->
+    <string name="day_today">Heute</string>
+    <string name="day_yesterday">Gestern</string>
+
+    <!-- Photos -->
+    <string name="photo_kind_photo">Foto</string>
+    <string name="photo_kind_scan">Scan</string>
+    <string name="photo_kind_shared">Geteilt</string>
+    <string name="photo_description">%1$s, aufgenommen um %2$s. %3$s</string>
+    <string name="photo_seen_at">Gesehen um %1$s</string>
+    <string name="photo_not_seen">Noch nicht gesehen</string>
+    <string name="upload_preparing">Wird vorbereitet</string>
+    <string name="upload_queued">Wartet auf Upload</string>
+    <string name="upload_uploading">Wird hochgeladen, %1$d %%</string>
+    <string name="upload_failed">Upload fehlgeschlagen</string>
+
+    <!-- Inbox -->
+    <string name="inbox_title">Gesendet</string>
+    <string name="inbox_expand">Gesendete Fotos zeigen</string>
+    <string name="inbox_collapse">Zurück zur Kamera</string>
+    <string name="inbox_no_note">Keine Notiz</string>
+    <string name="inbox_kept_until">Bleibt bis %1$s</string>
+    <string name="inbox_offline">Du bist offline. Die Fotos werden hochgeladen, sobald du wieder online bist.</string>
+    <string name="inbox_empty_title">Noch nichts gesendet</string>
+    <string name="inbox_empty_body">Hier erscheinen deine Fotos, und wann ein Agent sie gesehen hat.</string>
+    <plurals name="inbox_count">
+        <item quantity="one">%d Foto</item>
+        <item quantity="other">%d Fotos</item>
+    </plurals>
+
+    <!-- Viewer -->
+    <string name="viewer_close">Foto schließen</string>
+    <string name="viewer_taken">%1$s, %2$s</string>
+    <string name="viewer_add_note">Notiz hinzufügen</string>
+    <string name="viewer_edit_note">Notiz bearbeiten</string>
+    <string name="viewer_note_title">Notiz</string>
+    <string name="viewer_retry">Upload wiederholen</string>
+    <string name="viewer_save">Auf dem Smartphone speichern</string>
+    <string name="viewer_saved">In Pictures/Glimpse gespeichert</string>
+    <string name="viewer_save_failed">Das Foto ließ sich nicht speichern. Gib etwas Speicherplatz frei und versuch es noch einmal.</string>
+    <string name="viewer_share">Teilen</string>
+    <string name="viewer_share_failed">Das Foto ließ sich nicht teilen. Versuch es noch einmal.</string>
+    <string name="viewer_download_failed">Das Foto ließ sich nicht vom Server laden. Versuch es gleich noch einmal.</string>
+    <string name="viewer_delete">Löschen</string>
+    <string name="viewer_deleted">Foto gelöscht</string>
+
+    <!-- Pairing -->
+    <string name="pairing_title">Mit deinem Glimpse-Server koppeln</string>
+    <string name="pairing_body">Führe auf dem Computer deines Agents glimpse pair aus und scanne den angezeigten Code.</string>
+    <string name="pairing_removed">%1$s hat dieses Smartphone entfernt. Kopple es neu, um weiter Fotos zu senden.</string>
+    <string name="pairing_scan">Code scannen</string>
+    <string name="pairing_paste">Link einfügen</string>
+    <string name="pairing_camera_title">Kopplungscode scannen</string>
+    <string name="pairing_camera_body">Erlaube den Kamerazugriff, um den Code von glimpse pair zu scannen.</string>
+    <string name="pairing_scan_hint">Richte die Kamera auf den Code von glimpse pair</string>
+    <string name="pairing_not_glimpse">Das ist kein Glimpse-Kopplungscode. Scanne den Code von glimpse pair.</string>
+    <string name="pairing_paste_title">Kopplungslink einfügen</string>
+    <string name="pairing_paste_body">glimpse pair gibt einen Link aus, der mit glimpse://pair beginnt. Kopiere ihn auf dieses Smartphone und füge ihn hier ein.</string>
+    <string name="pairing_link_label">Kopplungslink</string>
+    <string name="pairing_link_invalid">Das ist kein Glimpse-Kopplungslink. Kopiere den ganzen Link, den glimpse pair ausgibt.</string>
+    <string name="pairing_continue">Weiter</string>
+    <string name="pairing_confirm_title">Mit %1$s koppeln?</string>
+    <string name="pairing_confirm_body">Gib diesem Smartphone einen Namen, damit du es in glimpse devices list wiedererkennst.</string>
+    <string name="pairing_device_name">Name des Smartphones</string>
+    <string name="pairing_device_name_hint">Bis zu 64 Zeichen</string>
+    <string name="pairing_device_name_invalid">Gib einen Namen für dieses Smartphone ein</string>
+    <string name="pairing_again">Dieses Smartphone ist schon mit %1$s gekoppelt. Neu koppeln gibt ihm ein neues Token; den alten Eintrag entfernst du mit glimpse devices remove.</string>
+    <string name="pairing_replace">Dieses Smartphone ist mit %1$s gekoppelt. Koppelst du es hier, endet diese Kopplung und seine Fotos verschwinden von diesem Smartphone.</string>
+    <string name="pairing_pair">Koppeln</string>
+    <string name="pairing_claiming">Wird mit %1$s gekoppelt …</string>
+    <string name="pairing_failed_title">Kopplung fehlgeschlagen</string>
+    <string name="pairing_failed_expired">Der Code ist abgelaufen oder wurde schon benutzt. Führe glimpse pair noch einmal aus, um einen neuen zu bekommen.</string>
+    <string name="pairing_failed_tries">Zu viele Versuche. Warte zehn Minuten und führe glimpse pair dann noch einmal aus.</string>
+    <string name="pairing_failed_rejected">Der Server hat die Kopplung abgelehnt. Führe glimpse pair noch einmal aus und scanne den neuen Code.</string>
+    <string name="pairing_failed_unreachable">%1$s ist nicht erreichbar. Prüfe, ob dieses Smartphone online ist und der Server läuft, und versuch es dann noch einmal.</string>
+    <string name="pairing_failed_local_network">Glimpse braucht Zugriff auf dein lokales Netzwerk, um %1$s zu erreichen. Erlaube ihn, wenn Android fragt, oder unter Berechtigungen in den App-Einstellungen, und versuch es dann noch einmal.</string>
+    <string name="pairing_open_settings">Einstellungen öffnen</string>
+    <string name="pairing_failed_unknown">Auf dem Server ist etwas schiefgegangen. Versuch es gleich noch einmal.</string>
+    <string name="pairing_try_again">Noch einmal versuchen</string>
+    <string name="pairing_done">Mit %1$s gekoppelt</string>
+    <string name="pairing_done_body">Deine Fotos gehen ab jetzt direkt an deinen Agent.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_server">Server</string>
+    <string name="settings_connected">Verbunden</string>
+    <string name="settings_connecting">Verbindung wird hergestellt …</string>
+    <string name="settings_offline">Offline. Die Fotos werden hochgeladen, sobald du wieder online bist.</string>
+    <string name="settings_device_name">Name dieses Smartphones</string>
+    <string name="settings_pair_again">Neu koppeln</string>
+    <string name="settings_pair_again_body">Einen neuen Code scannen, für diesen oder einen anderen Server</string>
+    <string name="settings_photos">Fotos</string>
+    <string name="settings_keep_copy">Kopie auf dem Smartphone behalten</string>
+    <string name="settings_keep_copy_body">Jedes Foto zusätzlich in Pictures/Glimpse speichern</string>
+    <string name="settings_retention">30 Tage aufbewahrt</string>
+    <string name="settings_retention_body">Der Server löscht jedes Foto 30 Tage, nachdem du es gesendet hast.</string>
+    <string name="settings_unpair">Kopplung aufheben</string>
+    <string name="settings_unpair_body">Keine Fotos mehr an %1$s senden</string>
+    <string name="settings_unpair_title">Kopplung aufheben?</string>
+    <string name="settings_unpair_text">Dieses Smartphone vergisst %1$s und löscht seine Fotos hier. Der Server behält sie, bis sie ablaufen. Um das Smartphone auch vom Server zu entfernen, führe glimpse devices remove aus.</string>
+    <string name="settings_unpair_confirm">Aufheben</string>
+    <string name="settings_version">Version</string>
+    <string name="settings_version_value">%1$s (%2$d)</string>
+
+    <!-- Share -->
+    <plurals name="share_title">
+        <item quantity="one">%d Bild an deinen Agent senden</item>
+        <item quantity="other">%d Bilder an deinen Agent senden</item>
+    </plurals>
+    <string name="share_note_label">Notiz hinzufügen (optional)</string>
+    <string name="share_send">Senden</string>
+    <string name="share_sent">Gesendet</string>
+    <plurals name="share_partial_title">
+        <item quantity="one">%1$d von %2$d Bild gesendet</item>
+        <item quantity="other">%1$d von %2$d Bildern gesendet</item>
+    </plurals>
+    <plurals name="share_partial_body">
+        <item quantity="one">%d Bild ließ sich nicht lesen. Teile es noch einmal aus der anderen App.</item>
+        <item quantity="other">%d Bilder ließen sich nicht lesen. Teile sie noch einmal aus der anderen App.</item>
+    </plurals>
+    <plurals name="share_failed">
+        <item quantity="one">Das Bild ließ sich nicht lesen. Teile es noch einmal aus der anderen App.</item>
+        <item quantity="other">Die Bilder ließen sich nicht lesen. Teile sie noch einmal aus der anderen App.</item>
+    </plurals>
+    <string name="share_not_paired_title">Kopple Glimpse zuerst</string>
+    <string name="share_not_paired_body">Öffne Glimpse und kopple es mit deinem Server. Teile die Bilder dann noch einmal.</string>
+    <string name="share_open_app">Glimpse öffnen</string>
+</resources>

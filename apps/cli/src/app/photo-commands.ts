@@ -171,7 +171,7 @@ export const download = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    'Save the original files, with all their metadata, such as where they were taken, into a directory. Never replaces a file that is already there.',
+    'Save the original files, as the phone sent them, into a directory. Never replaces a file that is already there.',
   ),
 );
 

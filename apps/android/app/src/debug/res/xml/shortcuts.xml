@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A copy of src/main/res/xml/shortcuts.xml for the debug build, whose
+     package name ends in .debug. Keep the two in step. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_photo"
+        android:shortcutId="photo"
+        android:shortcutLongLabel="@string/shortcut_photo_long"
+        android:shortcutShortLabel="@string/shortcut_photo">
+        <intent
+            android:action="io.github.davidvornholt.glimpse.action.PHOTO"
+            android:targetClass="io.github.davidvornholt.glimpse.MainActivity"
+            android:targetPackage="io.github.davidvornholt.glimpse.debug" />
+    </shortcut>
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutId="scan"
+        android:shortcutLongLabel="@string/shortcut_scan_long"
+        android:shortcutShortLabel="@string/shortcut_scan">
+        <intent
+            android:action="io.github.davidvornholt.glimpse.action.SCAN"
+            android:targetClass="io.github.davidvornholt.glimpse.MainActivity"
+            android:targetPackage="io.github.davidvornholt.glimpse.debug" />
+    </shortcut>
+</shortcuts>

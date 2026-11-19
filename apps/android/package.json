@@ -1,0 +1,17 @@
+{
+  "name": "@glimpse/android",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "./gradlew :app:assembleRelease --console=plain",
+    "check-types": "tsc --noEmit",
+    "test": "bun test && ./gradlew :app:testDebugUnitTest :app:lintRelease spotlessCheck --console=plain",
+    "release:plan": "bun src/plan-release.ts"
+  },
+  "devDependencies": {
+    "@davidvornholt/typescript-config": "workspace:*",
+    "@types/bun": "^1.4.3",
+    "typescript": "7.0.2"
+  }
+}
