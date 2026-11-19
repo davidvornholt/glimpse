@@ -39,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +59,7 @@ import io.github.davidvornholt.glimpse.R
 import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
 import io.github.davidvornholt.glimpse.shared.photos.UploadState
 import io.github.davidvornholt.glimpse.shared.ui.LocalSharedTransitionScope
+import io.github.davidvornholt.glimpse.shared.ui.LocalViewerSettled
 import io.github.davidvornholt.glimpse.shared.ui.NoteSheet
 import io.github.davidvornholt.glimpse.shared.ui.PhotoImage
 import io.github.davidvornholt.glimpse.shared.ui.SeenBadge
@@ -125,11 +127,17 @@ private fun ViewerContent(
     val pager =
         rememberPagerState(initialPage = items.indexOfFirst { it.id == currentId }.coerceAtLeast(0)) { items.size }
     val pageChange by rememberUpdatedState(onPageChange)
-    // The photo that fills most of the screen is the one that shrinks back into its thumbnail, even
-    // when the viewer closes before a swipe has come to rest.
     LaunchedEffect(pager, items) {
         snapshotFlow { pager.currentPage }.collect { page -> items.getOrNull(page)?.id?.let(pageChange) }
     }
+    // The photo that fills most of the screen is the one that grows and shrinks with the thumbnail,
+    // even when the viewer closes before a swipe has come to rest. It changes only while the viewer
+    // is fully open: a swipe that settles after the viewer began to close, or the very frame it
+    // does, would otherwise hand the flight to a photo with nowhere to start from.
+    val settled = LocalViewerSettled.current
+    val flight = remember { Flight(currentId) }
+    val flyingId = if (settled) currentId else flight.id
+    SideEffect { flight.id = flyingId }
     LaunchedEffect(items.isEmpty()) { if (items.isEmpty()) onClose() }
     // The controls follow the page that fills most of the screen, so they never act on a photo that
     // is sliding away.
@@ -160,13 +168,17 @@ private fun ViewerContent(
                     }
                 },
             ) {
-                ViewerImage(item, origin, shared = item.id == currentId, visibility = visibility)
+                ViewerImage(item, origin, shared = item.id == flyingId, visibility = visibility)
             }
         }
 
+        // The photo flies above everything else on its way in and out, so the controls wait for it to
+        // land and leave as it lifts off. Shown during the flight, they vanished under the photo and
+        // popped back when it landed.
+        val controls = chrome && settled
         if (current != null) {
             AnimatedVisibility(
-                chrome,
+                controls,
                 Modifier.align(Alignment.TopCenter),
                 enter = fadeIn() + slideInVertically { -it / 2 },
                 exit = fadeOut() + slideOutVertically { -it / 2 },
@@ -174,7 +186,7 @@ private fun ViewerContent(
                 ViewerTopBar(current, onClose)
             }
             AnimatedVisibility(
-                chrome,
+                controls,
                 Modifier.align(Alignment.BottomCenter),
                 enter = fadeIn() + slideInVertically { it / 2 },
                 exit = fadeOut() + slideOutVertically { it / 2 },
@@ -323,6 +335,9 @@ private fun ToolbarButton(
         Icon(icon, contentDescription = description)
     }
 }
+
+/** The photo that flies, kept across compositions without asking for another. */
+private class Flight(var id: String)
 
 private const val SCRIM_ALPHA = 0.5f
 private const val SECONDARY_ALPHA = 0.75f
