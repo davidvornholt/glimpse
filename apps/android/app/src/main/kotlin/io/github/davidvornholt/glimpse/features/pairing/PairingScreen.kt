@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -93,105 +94,44 @@ import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 import io.github.davidvornholt.glimpse.R
-import io.github.davidvornholt.glimpse.shared.api.ApiException
 import io.github.davidvornholt.glimpse.shared.haptics.Haptics
 import io.github.davidvornholt.glimpse.shared.network.LocalNetwork
 import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import io.github.davidvornholt.glimpse.shared.settings.Session
 import io.github.davidvornholt.glimpse.shared.ui.CameraPermissionPrompt
 import io.github.davidvornholt.glimpse.shared.ui.rememberCameraPermission
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import java.io.IOException
 import java.net.URI
-
-private sealed interface Step {
-    data object Welcome : Step
-
-    data object Scanning : Step
-
-    data object Pasting : Step
-
-    data class Confirming(
-        val link: PairingLink,
-    ) : Step
-
-    data class Claiming(
-        val link: PairingLink,
-    ) : Step
-
-    data class Failed(
-        val link: PairingLink,
-        val failure: PairingFailure,
-    ) : Step
-
-    data class Done(
-        val session: Session,
-    ) : Step
-}
 
 /**
  * Pairs the phone with a Glimpse server: scan the QR code from `glimpse
  * pair` or paste its link, name the phone, and it's ready.
  */
 @Composable
-fun PairingScreen(
+internal fun PairingScreen(
     claimer: PairingClaimer,
     haptics: Haptics,
-    scope: CoroutineScope,
+    flow: PairingFlow,
     current: Session?,
     removedFrom: String?,
-    pendingLink: PairingLink?,
-    onLinkHandled: () -> Unit,
     allowCleartext: Boolean,
     onDone: () -> Unit,
     onCancel: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    var step by remember { mutableStateOf<Step>(Step.Welcome) }
-    val linkHandled by rememberUpdatedState(onLinkHandled)
-    LaunchedEffect(pendingLink) {
-        if (pendingLink != null) {
-            step = Step.Confirming(pendingLink)
-            linkHandled()
-        }
-    }
-    val canGoBack = step != Step.Welcome && step !is Step.Claiming && step !is Step.Done
-    BackHandler(enabled = canGoBack) { step = Step.Welcome }
+    val step = flow.step
+    val canGoBack = step != Step.Welcome && step !is Step.Claiming && step !is Step.Permission && step !is Step.Done
+    BackHandler(enabled = canGoBack) { flow.step = Step.Welcome }
     BackHandler(enabled = step == Step.Welcome && onCancel != null) { onCancel?.invoke() }
-
-    val runClaim: suspend (PairingLink, String) -> Unit = { link, name ->
-        step =
-            try {
-                Step.Done(claimer.claim(link, name))
-            } catch (error: ApiException) {
-                Step.Failed(link, PairingClaimer.failureOf(error))
-            } catch (error: IOException) {
-                Step.Failed(link, PairingClaimer.failureOf(error))
-            }
-    }
-    val context = LocalContext.current
-    var waitingForPermission by remember { mutableStateOf<Pair<PairingLink, String>?>(null) }
+    val context = LocalContext.current.applicationContext
     val localNetwork =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            val (link, name) = waitingForPermission ?: return@rememberLauncherForActivityResult
-            waitingForPermission = null
-            if (granted) {
-                scope.launch { runClaim(link, name) }
-            } else {
-                step = Step.Failed(link, PairingFailure.LocalNetworkDenied)
-            }
+            flow.permissionResult(granted, claimer)
         }
-    val claim: (PairingLink, String) -> Unit = { link, name ->
-        step = Step.Claiming(link)
-        scope.launch {
-            if (!LocalNetwork.isAllowed(context) && LocalNetwork.isLocal(link.host)) {
-                waitingForPermission = link to name
-                localNetwork.launch(LocalNetwork.PERMISSION)
-            } else {
-                runClaim(link, name)
-            }
+    LaunchedEffect(step) {
+        if (step is Step.Permission && !step.launched) {
+            flow.step = step.copy(launched = true)
+            localNetwork.launch(LocalNetwork.PERMISSION)
         }
     }
 
@@ -211,8 +151,8 @@ fun PairingScreen(
                 Step.Welcome -> {
                     Welcome(
                         removedFrom = removedFrom,
-                        onScan = { step = Step.Scanning },
-                        onPaste = { step = Step.Pasting },
+                        onScan = { flow.step = Step.Scanning },
+                        onPaste = { flow.step = Step.Pasting },
                         onCancel = onCancel,
                     )
                 }
@@ -221,17 +161,17 @@ fun PairingScreen(
                     Scanning(
                         allowCleartext = allowCleartext,
                         haptics = haptics,
-                        onLink = { step = Step.Confirming(it) },
-                        onPaste = { step = Step.Pasting },
-                        onClose = { step = Step.Welcome },
+                        onLink = flow::open,
+                        onPaste = { flow.step = Step.Pasting },
+                        onClose = { flow.step = Step.Welcome },
                     )
                 }
 
                 Step.Pasting -> {
                     Pasting(
                         allowCleartext = allowCleartext,
-                        onLink = { step = Step.Confirming(it) },
-                        onCancel = { step = Step.Welcome },
+                        onLink = flow::open,
+                        onCancel = { flow.step = Step.Welcome },
                     )
                 }
 
@@ -239,9 +179,23 @@ fun PairingScreen(
                     Confirming(
                         link = shown.link,
                         current = current,
-                        onPair = { name -> claim(shown.link, name) },
-                        onCancel = { if (onCancel != null && pendingLink == null) onCancel() else step = Step.Welcome },
+                        claimer = claimer,
+                        onPair = { name ->
+                            flow.pair(
+                                shown.link,
+                                name,
+                                claimer,
+                            ) { !LocalNetwork.isAllowed(context) && LocalNetwork.isLocal(shown.link.host) }
+                        },
+                        onCancel = {
+                            flow.step = Step.Welcome
+                            onCancel?.invoke()
+                        },
                     )
+                }
+
+                is Step.Permission -> {
+                    Claiming(shown.link)
                 }
 
                 is Step.Claiming -> {
@@ -254,14 +208,23 @@ fun PairingScreen(
                         onRetry = {
                             // A used-up code needs a new one; otherwise the same link may work now.
                             val needsNewCode = shown.failure == PairingFailure.CodeExpired || shown.failure == PairingFailure.TooManyTries
-                            step = if (needsNewCode) Step.Welcome else Step.Confirming(shown.link)
+                            flow.step = if (needsNewCode) Step.Welcome else Step.Confirming(shown.link)
                         },
-                        onCancel = onCancel,
+                        onCancel =
+                            onCancel?.let { cancel ->
+                                {
+                                    flow.step = Step.Welcome
+                                    cancel()
+                                }
+                            },
                     )
                 }
 
                 is Step.Done -> {
-                    Done(shown.session, haptics, onDone)
+                    Done(shown.session, haptics) {
+                        flow.step = Step.Welcome
+                        onDone()
+                    }
                 }
             }
         }
@@ -453,6 +416,7 @@ private fun Pasting(
 private fun Confirming(
     link: PairingLink,
     current: Session?,
+    claimer: PairingClaimer,
     onPair: (String) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -460,6 +424,12 @@ private fun Confirming(
     val suggested = remember { current?.deviceName ?: suggestedDeviceName(context) }
     val name = rememberTextFieldState(suggested)
     val trimmed = name.text.trim()
+    var loaded by remember(link) { mutableStateOf(false) }
+    var warning by remember(link) { mutableStateOf<PairingClaimer.SwitchWarning?>(null) }
+    LaunchedEffect(link) {
+        warning = claimer.switchWarning(link)
+        loaded = true
+    }
     val valid = trimmed.isNotEmpty() && trimmed.length <= MAX_NAME
     Page {
         MorphingHero(Icons.Rounded.QrCodeScanner, MaterialShapes.Pill, MaterialShapes.Cookie6Sided)
@@ -476,18 +446,23 @@ private fun Confirming(
                 Text(stringResource(if (valid) R.string.pairing_device_name_hint else R.string.pairing_device_name_invalid))
             },
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
-            onKeyboardAction = { if (valid) onPair(trimmed.toString()) },
+            onKeyboardAction = { if (loaded && valid) onPair(trimmed.toString()) },
         )
-        if (current != null) {
+        val replacing = warning
+        if (replacing != null) {
+            val clearing = stringResource(R.string.pairing_replace, replacing.previous)
             val message =
-                if (current.server == link.server) {
-                    stringResource(R.string.pairing_again, link.host)
+                if (replacing.unsent > 0) {
+                    val loss = pluralStringResource(R.plurals.pairing_unsent, replacing.unsent, replacing.unsent)
+                    "$clearing $loss"
                 } else {
-                    stringResource(R.string.pairing_replace, hostOf(current.server))
+                    clearing
                 }
             Notice(Icons.Rounded.WarningAmber, message)
+        } else if (loaded && current != null && PairingLink.sameServer(current.server, link.server)) {
+            Notice(Icons.Rounded.WarningAmber, stringResource(R.string.pairing_again, link.host))
         }
-        Button(onClick = { onPair(trimmed.toString()) }, enabled = valid, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { onPair(trimmed.toString()) }, enabled = loaded && valid, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.pairing_pair))
         }
         TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) }

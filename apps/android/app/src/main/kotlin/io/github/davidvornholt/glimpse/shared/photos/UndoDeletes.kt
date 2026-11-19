@@ -16,8 +16,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/** [server] is the one the photo was on when Delete was tapped, so the delete goes nowhere else. */
 data class PendingDelete(
     val id: String,
+    val server: String,
     val deadline: Long,
 )
 
@@ -26,10 +28,15 @@ class UndoDeletes(
     private val store: DataStore<Preferences>,
     scope: CoroutineScope,
     private val now: () -> Long,
-    private val delete: suspend (String) -> Unit,
+    private val delete: suspend (id: String, server: String) -> Unit,
 ) {
     private val mutex = Mutex()
-    private val saved = store.data.map { prefs -> prefs[ID]?.let { PendingDelete(it, prefs[DEADLINE] ?: 0) } }
+    private val saved =
+        store.data.map { prefs ->
+            val id = prefs[ID]
+            val server = prefs[SERVER]
+            if (id != null && server != null) PendingDelete(id, server, prefs[DEADLINE] ?: 0) else null
+        }
     val pending = saved.stateIn(scope, SharingStarted.Eagerly, null)
 
     init {
@@ -39,7 +46,7 @@ class UndoDeletes(
                     delay((item.deadline - now()).coerceAtLeast(0))
                     mutex.withLock {
                         if (saved.first() == item) {
-                            delete(item.id)
+                            delete(item.id, item.server)
                             store.edit { it.clear() }
                         }
                     }
@@ -48,15 +55,19 @@ class UndoDeletes(
         }
     }
 
+    suspend fun current(): PendingDelete? = saved.first()
+
     suspend fun start(
         id: String,
+        server: String,
         timeout: Long,
     ) = mutex.withLock {
         val previous = saved.first()
         if (previous?.id == id) return@withLock
-        if (previous != null) delete(previous.id)
+        if (previous != null) delete(previous.id, previous.server)
         store.edit {
             it[ID] = id
+            it[SERVER] = server
             val started = now()
             it[DEADLINE] = started + timeout.coerceAtMost(Long.MAX_VALUE - started)
         }
@@ -74,6 +85,7 @@ class UndoDeletes(
 
     private companion object {
         val ID = stringPreferencesKey("id")
+        val SERVER = stringPreferencesKey("server")
         val DEADLINE = longPreferencesKey("deadline")
     }
 }

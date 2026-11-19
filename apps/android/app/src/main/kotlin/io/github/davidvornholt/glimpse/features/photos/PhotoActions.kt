@@ -13,10 +13,7 @@ import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
 import io.github.davidvornholt.glimpse.shared.photos.PhotoExport
 import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 import java.io.IOException
 
 /**
@@ -54,16 +51,17 @@ class PhotoActions(
         scope.launch {
             val photo = exportFor(item, R.string.viewer_share_preview) ?: return@launch
             try {
-                val shared = withContext(Dispatchers.IO) { shareableCopy(photo.file, photo.displayName(item.id)) }
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", shared)
-                val send =
-                    Intent(Intent.ACTION_SEND)
-                        .setType(photo.type.mimeType)
-                        .putExtra(Intent.EXTRA_STREAM, uri)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                send.clipData = ClipData.newRawUri(null, uri)
-                item.note?.let { send.putExtra(Intent.EXTRA_TEXT, it) }
-                from.startActivity(Intent.createChooser(send, null))
+                library.shareFile(item.id, photo) { shared ->
+                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", shared)
+                    val send =
+                        Intent(Intent.ACTION_SEND)
+                            .setType(photo.type.mimeType)
+                            .putExtra(Intent.EXTRA_STREAM, uri)
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    send.clipData = ClipData.newRawUri(null, uri)
+                    item.note?.let { send.putExtra(Intent.EXTRA_TEXT, it) }
+                    from.startActivity(Intent.createChooser(send, null))
+                }
             } catch (_: IOException) {
                 snackbar.showSnackbar(message(R.string.viewer_share_failed))
             }
@@ -99,7 +97,7 @@ class PhotoActions(
 
     /** Hides the photo at once and deletes it unless the user undoes it in time. */
     fun delete(item: GalleryItem) {
-        scope.launch { library.undo.start(item.id, undoMillis) }
+        scope.launch { library.startDelete(item.id, undoMillis) }
     }
 
     fun setNote(
@@ -119,16 +117,5 @@ class PhotoActions(
 
     fun retry(item: GalleryItem) {
         scope.launch { library.retry(item.id) }
-    }
-
-    /** Copies into the folder the file provider shares, so only that copy leaves the app. */
-    private fun shareableCopy(
-        file: File,
-        name: String,
-    ): File {
-        val directory = File(context.cacheDir, "shared").apply { mkdirs() }
-        val target = File(directory, name)
-        if (file.canonicalPath != target.canonicalPath) file.copyTo(target, overwrite = true)
-        return target
     }
 }

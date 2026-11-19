@@ -131,7 +131,12 @@
     <string name="pairing_device_name_hint">Bis zu 64 Zeichen</string>
     <string name="pairing_device_name_invalid">Gib einen Namen für dieses Smartphone ein</string>
     <string name="pairing_again">Dieses Smartphone ist schon mit %1$s gekoppelt. Neu koppeln gibt ihm ein neues Token; den alten Eintrag entfernst du mit glimpse devices remove.</string>
-    <string name="pairing_replace">Dieses Smartphone ist mit %1$s gekoppelt. Koppelst du es hier, endet diese Kopplung und seine Fotos verschwinden von diesem Smartphone.</string>
+    <string name="unpair_clear_failed">Die Daten auf diesem Smartphone konnten nicht vollständig gelöscht werden. Versuche erneut, die Kopplung aufzuheben.</string>
+    <string name="pairing_replace">Beim Koppeln werden die Fotos von %1$s auf diesem Smartphone gelöscht.</string>
+    <plurals name="pairing_unsent">
+        <item quantity="one">%d Original ist noch nicht vollständig hochgeladen, und Glimpse löscht seine Kopie.</item>
+        <item quantity="other">%d Originale sind noch nicht vollständig hochgeladen, und Glimpse löscht seine Kopien.</item>
+    </plurals>
     <string name="pairing_pair">Koppeln</string>
     <string name="pairing_claiming">Wird mit %1$s gekoppelt …</string>
     <string name="pairing_failed_title">Kopplung fehlgeschlagen</string>

@@ -134,6 +134,7 @@ dependencies {
     implementation(libs.profileinstaller)
     debugImplementation(libs.compose.ui.tooling)
 
+    testImplementation(libs.mockito)
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.test)

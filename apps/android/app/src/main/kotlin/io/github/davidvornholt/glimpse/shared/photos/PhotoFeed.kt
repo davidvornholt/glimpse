@@ -50,6 +50,7 @@ class PhotoFeed(
     private val removed = MutableSharedFlow<String>(extraBufferCapacity = 64)
     private val newlyViewed = MutableSharedFlow<String>(extraBufferCapacity = 16)
     private var job: Job? = null
+    private var discarded: Session? = null
 
     val photos: StateFlow<RemotePhotos> = all.asStateFlow()
 
@@ -102,7 +103,7 @@ class PhotoFeed(
                             }
 
                             is ServerEvent.PhotoChanged -> {
-                                upsert(event.photo)
+                                upsert(session.session, event.photo)
                             }
 
                             is ServerEvent.PhotoDeleted -> {
@@ -111,7 +112,7 @@ class PhotoFeed(
                             }
 
                             is ServerEvent.Waiting -> {
-                                waitingCount.value = event.count
+                                synchronized(this@PhotoFeed) { if (accepts(session.session)) waitingCount.value = event.count }
                             }
                         }
                     }
@@ -145,11 +146,29 @@ class PhotoFeed(
             photos += page.photos
             cursor = page.nextCursor
         } while (cursor != null && photos.size < MAX_PHOTOS)
-        all.value = RemotePhotos(photos.associateBy { it.id }, session.server)
-        if (cursor == null) listed.tryEmit(ServerList(session, photos.mapTo(HashSet()) { it.id }))
+        synchronized(this) {
+            if (!accepts(session)) return
+            all.value = RemotePhotos(photos.associateBy { it.id }, session.server)
+            if (cursor == null) listed.tryEmit(ServerList(session, photos.mapTo(HashSet()) { it.id }))
+        }
     }
 
-    fun upsert(photo: Photo) {
+    @Synchronized
+    fun clear() {
+        discarded = (sessions.state.value as? SessionState.Paired)?.session
+        all.value = RemotePhotos()
+        waitingCount.value = 0
+        state.value = Connection.Offline
+    }
+
+    private fun accepts(session: Session) = session != discarded && (sessions.state.value as? SessionState.Paired)?.session == session
+
+    @Synchronized
+    fun upsert(
+        session: Session,
+        photo: Photo,
+    ) {
+        if (!accepts(session)) return
         val previous = all.value.photos[photo.id]
         all.update { it.copy(photos = it.photos + (photo.id to photo)) }
         if (photo.viewedAt != null && previous?.viewedAt == null) newlyViewed.tryEmit(photo.id)

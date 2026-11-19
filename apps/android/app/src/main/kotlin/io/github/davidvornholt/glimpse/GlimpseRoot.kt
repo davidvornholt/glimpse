@@ -55,7 +55,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.davidvornholt.glimpse.features.capture.CaptureScreen
 import io.github.davidvornholt.glimpse.features.capture.FILMSTRIP
 import io.github.davidvornholt.glimpse.features.pairing.PairingClaimer
+import io.github.davidvornholt.glimpse.features.pairing.PairingFlow
 import io.github.davidvornholt.glimpse.features.pairing.PairingScreen
+import io.github.davidvornholt.glimpse.features.pairing.Step
 import io.github.davidvornholt.glimpse.features.photos.INBOX
 import io.github.davidvornholt.glimpse.features.photos.INBOX_PEEK_HEIGHT
 import io.github.davidvornholt.glimpse.features.photos.InboxSheet
@@ -63,7 +65,6 @@ import io.github.davidvornholt.glimpse.features.photos.PhotoActions
 import io.github.davidvornholt.glimpse.features.photos.PhotoViewer
 import io.github.davidvornholt.glimpse.features.settings.SettingsScreen
 import io.github.davidvornholt.glimpse.shared.network.LocalNetwork
-import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import io.github.davidvornholt.glimpse.shared.photos.Connection
 import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
 import io.github.davidvornholt.glimpse.shared.settings.CaptureMode
@@ -78,11 +79,11 @@ import io.github.davidvornholt.glimpse.shared.ui.sharedPhotoKey
 import io.github.davidvornholt.glimpse.shared.ui.theme.GlimpseTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.time.LocalDate
 
-/** What the activity hands the screens: links and shortcuts that opened it. */
+/** What the activity hands the screens: a link it couldn't read and the shortcuts that opened it. */
 class LaunchRequests(
-    val pairingLink: PairingLink?,
     val invalidLink: Boolean,
     val scan: Boolean,
     /** Counts the times a shortcut or the tile asked for the camera. */
@@ -91,29 +92,27 @@ class LaunchRequests(
 
 /** Pairing until the phone is paired, then the camera with the inbox and viewer over it. */
 @Composable
-fun GlimpseRoot(
+internal fun GlimpseRoot(
     graph: AppGraph,
     requests: LaunchRequests,
-    onLinkHandled: () -> Unit,
+    pairing: PairingFlow,
     onInvalidLinkShown: () -> Unit,
     onScanHandled: () -> Unit,
     onDarkSystemBars: (Boolean) -> Unit,
 ) {
-    val context = LocalContext.current
     val session by graph.sessions.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var pairingOpen by rememberSaveable { mutableStateOf(false) }
     var viewerOpen by remember { mutableStateOf(false) }
     val invalidMessage = stringResource(R.string.pairing_link_invalid)
     LaunchedEffect(session) { if (session is SessionState.Unpaired) pairingOpen = true }
-    LaunchedEffect(requests.pairingLink) { if (requests.pairingLink != null) pairingOpen = true }
     LaunchedEffect(requests.invalidLink) {
         if (requests.invalidLink) {
             onInvalidLinkShown()
             snackbar.showSnackbar(invalidMessage)
         }
     }
-    val claimer = remember(graph) { PairingClaimer(graph::anonymousApi, graph.library) }
+    val claimer = remember(graph) { PairingClaimer(graph::anonymousApi, graph.sessions, graph.library) }
     val paired = session as? SessionState.Paired
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -121,16 +120,14 @@ fun GlimpseRoot(
             // The splash screen stays up until the session is known.
             session is SessionState.Loading -> {}
 
-            pairingOpen || paired == null -> {
+            pairingOpen || paired == null || pairing.step != Step.Welcome -> {
                 LaunchedEffect(Unit) { onDarkSystemBars(false) }
                 PairingScreen(
                     claimer = claimer,
                     haptics = graph.haptics,
-                    scope = graph.uiScope,
+                    flow = pairing,
                     current = paired?.session,
                     removedFrom = (session as? SessionState.Unpaired)?.removedFrom,
-                    pendingLink = requests.pairingLink,
-                    onLinkHandled = onLinkHandled,
                     allowCleartext = BuildConfig.DEBUG,
                     onDone = { pairingOpen = false },
                     onCancel = if (paired != null) ({ pairingOpen = false }) else null,
@@ -198,6 +195,7 @@ private fun PairedContent(
     var viewerId by rememberSaveable { mutableStateOf<String?>(null) }
     var viewerOpen by rememberSaveable { mutableStateOf(false) }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    val unpairFailed = stringResource(R.string.unpair_clear_failed)
     val viewerOpenChange by rememberUpdatedState(onViewerOpenChange)
     LaunchedEffect(viewerOpen) { viewerOpenChange(viewerOpen) }
 
@@ -339,7 +337,11 @@ private fun PairedContent(
             onUnpair = {
                 settingsOpen = false
                 graph.uiScope.launch {
-                    graph.library.changePairing(null)
+                    try {
+                        graph.library.changePairing(null)
+                    } catch (_: IOException) {
+                        snackbar.showSnackbar(unpairFailed)
+                    }
                 }
             },
             onBack = { settingsOpen = false },

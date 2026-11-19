@@ -114,6 +114,20 @@ class SettingsStore(
 
     private fun reservation(id: String) = stringPreferencesKey(RESERVED + id)
 
+    /** Drops the next-photo note and every capture's reserved copy of it, so none reaches another server. */
+    suspend fun clearNotes() =
+        reservations.withLock {
+            store.edit { prefs ->
+                prefs.remove(PENDING_NOTE)
+                prefs
+                    .asMap()
+                    .keys
+                    .filter { it.name.startsWith(RESERVED) }
+                    .forEach { prefs.remove(it) }
+            }
+            Unit
+        }
+
     suspend fun setMode(mode: CaptureMode) = store.edit { it[MODE] = mode.name }
 
     suspend fun setFlash(flash: FlashSetting) = store.edit { it[FLASH] = flash.name }

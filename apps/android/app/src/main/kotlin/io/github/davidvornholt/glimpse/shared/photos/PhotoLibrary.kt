@@ -12,6 +12,7 @@ import io.github.davidvornholt.glimpse.shared.api.PhotoSource
 import io.github.davidvornholt.glimpse.shared.image.Gallery
 import io.github.davidvornholt.glimpse.shared.image.ImageProcessor
 import io.github.davidvornholt.glimpse.shared.image.UnusableImageException
+import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import io.github.davidvornholt.glimpse.shared.settings.PairingId
 import io.github.davidvornholt.glimpse.shared.settings.Session
 import io.github.davidvornholt.glimpse.shared.settings.SessionState
@@ -22,7 +23,9 @@ import io.github.davidvornholt.glimpse.shared.upload.CaptureRecord
 import io.github.davidvornholt.glimpse.shared.upload.CaptureStore
 import io.github.davidvornholt.glimpse.shared.upload.DeleteScheduler
 import io.github.davidvornholt.glimpse.shared.upload.UploadScheduler
+import io.github.davidvornholt.glimpse.shared.upload.deletionSession
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +37,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.time.Instant
@@ -68,9 +72,12 @@ class PhotoLibrary(
     private val ids: UlidGenerator,
     private val apiFor: (Session) -> GlimpseApi,
     private val cacheDir: File,
+    private val revokeShare: (File) -> Unit,
     scope: CoroutineScope,
 ) {
     private val pairingChanges = Mutex()
+    private val exports = Mutex()
+    private val sharedDir = File(cacheDir, "shared")
     private val pending = MutableStateFlow<Map<String, PendingCapture>>(emptyMap())
     private val hidden = MutableStateFlow<Set<String>>(emptySet())
 
@@ -318,18 +325,31 @@ class PhotoLibrary(
         }
         val session = sessions.currentSession() ?: return
         try {
-            feed.upsert(apiFor(session).setNote(id, cleaned))
+            feed.upsert(session, apiFor(session).setNote(id, cleaned))
         } catch (error: ApiException) {
             if (error.tag == ApiErrorTag.Unauthorized) sessions.markRemoved(session.token)
             throw error
         }
     }
 
+    /** Hides the photo at once and deletes it on the server it is on unless Undo comes first. */
+    suspend fun startDelete(
+        id: String,
+        timeout: Long,
+    ) {
+        val server = (sessions.state.value as? SessionState.Paired)?.session?.server ?: return
+        undo.start(id, server, timeout)
+    }
+
     /** Deletes a photo. It stays hidden until the server has it deleted. */
-    private suspend fun delete(id: String) {
+    private suspend fun delete(
+        id: String,
+        server: String,
+    ) {
+        if (deletionSession(server, sessions.currentSession()) == null) return
         hidden.update { it + id }
         // Queued first, so the server hears of it even when the process dies right after.
-        deletes.enqueue(id)
+        deletes.enqueue(id, server)
         uploads.cancel(id)
         captures.remove(id)
         feed.forget(id)
@@ -344,44 +364,74 @@ class PhotoLibrary(
      * Prefers an original on the phone or server and identifies a preview so the
      * viewer can ask before saving or sharing the lower-resolution copy.
      */
-    internal suspend fun fileFor(item: GalleryItem): PhotoExport {
-        val record = captures.get(item.id)
-        if (record != null) {
-            val original = captures.originalFile(record)
-            if (original.isFile) return PhotoExport(original, record.originalType)
-        }
-        val api = sessions.currentSession()?.let(apiFor)
-        val directory = File(cacheDir, "shared").apply { mkdirs() }
+    internal suspend fun fileFor(item: GalleryItem): PhotoExport =
+        exports.withLock {
+            val record = captures.get(item.id)
+            if (record != null) {
+                val original = captures.originalFile(record)
+                if (original.isFile) return@withLock PhotoExport(original, record.originalType)
+            }
+            val api = sessions.currentSession()?.let(apiFor)
+            val directory = sharedDir.apply { mkdirs() }
 
-        suspend fun downloadOriginal(): PhotoExport {
-            val server = api ?: throw IOException("Not paired")
-            val target = File(directory, "glimpse-${item.id}.${item.originalType.extension}")
-            server.download(server.originalUrl(item.id), target)
-            return PhotoExport(target, item.originalType)
-        }
+            suspend fun downloadOriginal(): PhotoExport {
+                val server = api ?: throw IOException("Not paired")
+                val target = File(directory, "glimpse-${item.id}.${item.originalType.extension}")
+                server.download(server.originalUrl(item.id), target)
+                return PhotoExport(target, item.originalType)
+            }
 
-        val hasOriginal =
-            api != null && feed.photos.value.photos[item.id]
-                ?.hasOriginal != false
-        return resolveExport(captures.previewFile(item.id), if (hasOriginal) ::downloadOriginal else null) {
-            val server = api ?: throw IOException("Not paired")
-            val target = File(directory, "glimpse-${item.id}-preview.jpg")
-            server.download(server.previewUrl(item.id), target)
-            target
+            val hasOriginal =
+                api != null && feed.photos.value.photos[item.id]
+                    ?.hasOriginal != false
+            resolveExport(captures.previewFile(item.id), if (hasOriginal) ::downloadOriginal else null) {
+                val server = api ?: throw IOException("Not paired")
+                val target = File(directory, "glimpse-${item.id}-preview.jpg")
+                server.download(server.previewUrl(item.id), target)
+                target
+            }
         }
-    }
 
     internal suspend fun saveToGallery(
         id: String,
         photo: PhotoExport,
-    ) {
+    ) = exports.withLock {
         gallery.save(photo.file, photo.type.mimeType, photo.displayName(id))
     }
 
-    /** Queue cleanup and installing the new pairing are atomic with respect to import commits. */
+    /** Copies into the folder the file provider shares, so only that copy leaves the app. */
+    internal suspend fun shareFile(
+        id: String,
+        photo: PhotoExport,
+        send: (File) -> Unit,
+    ) = exports.withLock {
+        val copy =
+            withContext(Dispatchers.IO) {
+                val target = File(sharedDir.apply { mkdirs() }, photo.displayName(id))
+                if (photo.file.canonicalPath != target.canonicalPath) photo.file.copyTo(target, overwrite = true)
+                target
+            }
+        send(copy)
+    }
+
+    /**
+     * The one way the pairing changes, under the lock import commits take, so no photo lands
+     * between the cleanup and the new session. Pairing again with the same server keeps the
+     * photos for the new device; another server or unpairing clears them first.
+     */
     suspend fun changePairing(session: Session?) {
         pairingChanges.withLock {
-            if (session == null || sessions.lastServer()?.let { it != session.server } == true) clear()
+            val previous = sessions.lastServer()
+            when {
+                session == null -> clear()
+
+                previous == null -> Unit
+
+                // Before the new session is saved, so if the process dies here the next pairing renews the photos again.
+                PairingLink.sameServer(previous, session.server) -> prepareForNewDevice()
+
+                else -> clear()
+            }
             if (session == null) {
                 sessions.clear()
                 settings.clear()
@@ -392,12 +442,47 @@ class PhotoLibrary(
         if (session != null) resumeUploads()
     }
 
+    /** Clears Glimpse's private photo state, including copies made by Save and Share. */
     private suspend fun clear() {
         undo.clear()
         uploads.cancelAll()
-        captures.clear()
+        // Under the export lock, so a save or share that is reading an original finishes first.
+        exports.withLock {
+            captures.clear()
+            withContext(Dispatchers.IO) {
+                sharedDir
+                    .listFiles()
+                    .orEmpty()
+                    .filter { it.isFile }
+                    .forEach(revokeShare)
+                if (sharedDir.exists() && !sharedDir.deleteRecursively()) throw IOException("Couldn't clear shared photos")
+            }
+        }
+        settings.clearNotes()
+        feed.clear()
         pending.value = emptyMap()
         hidden.value = emptySet()
+    }
+
+    suspend fun unsentCount(): Int = captures.unsentOriginals()
+
+    /**
+     * Readies the photos for the new device that pairing again with the same server creates.
+     * The server lets only the device that registered a photo send its images, so every photo
+     * with an image still to send starts over under a fresh id; one whose preview the old device
+     * sent shows twice until that copy expires. A photo with all its images on the server keeps
+     * its id, because any device may change its note, and so does one hidden for a delete, so
+     * the delete still finds it.
+     */
+    private suspend fun prepareForNewDevice() {
+        uploads.cancelAll()
+        captures.load()
+        val waitingForDelete = hidden.value + listOfNotNull(undo.current()?.id)
+        captures.records.value.values
+            .filter { record ->
+                val imagesLeft = !record.registered || !record.previewSent || (!record.originalSent && !record.originalSkipped)
+                imagesLeft && !record.deletedOnServer && record.id !in waitingForDelete
+            }.forEach { captures.renewRegistration(it.id, ids.next()) }
     }
 
     /** Queues every unfinished upload that has no work, such as those that waited while the phone was unpaired. */

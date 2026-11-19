@@ -7,17 +7,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import io.github.davidvornholt.glimpse.features.pairing.PairingFlow
 import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import io.github.davidvornholt.glimpse.shared.settings.SessionState
 import io.github.davidvornholt.glimpse.shared.ui.theme.GlimpseTheme
 
 class MainActivity : ComponentActivity() {
-    private var pairingLink by mutableStateOf<PairingLink?>(null)
+    private val pairing by viewModels<PairingFlow>()
     private var invalidLink by mutableStateOf(false)
     private var scanRequested by mutableStateOf(false)
     private var cameraRequests by mutableIntStateOf(0)
@@ -34,8 +36,8 @@ class MainActivity : ComponentActivity() {
             GlimpseTheme {
                 GlimpseRoot(
                     graph = graph,
-                    requests = LaunchRequests(pairingLink, invalidLink, scanRequested, cameraRequests),
-                    onLinkHandled = { pairingLink = null },
+                    requests = LaunchRequests(invalidLink, scanRequested, cameraRequests),
+                    pairing = pairing,
                     onInvalidLinkShown = { invalidLink = false },
                     onScanHandled = { scanRequested = false },
                     onDarkSystemBars = ::systemBars,
@@ -53,7 +55,7 @@ class MainActivity : ComponentActivity() {
         when (intent.action) {
             Intent.ACTION_VIEW -> {
                 val link = intent.dataString?.let { PairingLink.parse(it, allowCleartext = BuildConfig.DEBUG) }
-                if (link != null) pairingLink = link else invalidLink = true
+                if (link != null) pairing.open(link) else invalidLink = true
             }
 
             ACTION_SCAN -> {

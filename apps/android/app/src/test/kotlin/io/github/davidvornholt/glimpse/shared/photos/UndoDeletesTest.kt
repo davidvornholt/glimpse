@@ -17,6 +17,7 @@ import kotlin.test.assertNull
 @OptIn(ExperimentalCoroutinesApi::class)
 class UndoDeletesTest {
     @get:Rule val folder = TemporaryFolder()
+    private val server = "https://glimpse.example.com"
 
     @Test
     fun `reopening Undo uses the original deadline and commits without a snackbar host`() =
@@ -24,15 +25,15 @@ class UndoDeletesTest {
             val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
             val deleted = mutableListOf<String>()
 
-            fun open(scope: CoroutineScope) = UndoDeletes(store, scope, { testScheduler.currentTime }) { deleted.add(it) }
+            fun open(scope: CoroutineScope) = UndoDeletes(store, scope, { testScheduler.currentTime }) { id, _ -> deleted.add(id) }
             val oldScope = CoroutineScope(coroutineContext + Job())
             val old = open(oldScope)
-            old.start("photo", 8000)
+            old.start("photo", server, 8000)
             advanceTimeBy(3000)
             oldScope.cancel()
             val restored = open(backgroundScope)
             runCurrent()
-            assertEquals(PendingDelete("photo", 8000), restored.pending.value)
+            assertEquals(PendingDelete("photo", server, 8000), restored.pending.value)
             advanceTimeBy(5001)
             runCurrent()
             assertEquals(listOf("photo"), deleted)
@@ -44,9 +45,9 @@ class UndoDeletesTest {
         runTest {
             val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
             val deleted = mutableListOf<String>()
-            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }) { deleted.add(it) }
-            undo.start("first", 8000)
-            undo.start("second", 8000)
+            val undo = UndoDeletes(store, backgroundScope, { testScheduler.currentTime }) { id, _ -> deleted.add(id) }
+            undo.start("first", server, 8000)
+            undo.start("second", server, 8000)
             undo.undo("second")
             advanceTimeBy(8001)
             runCurrent()

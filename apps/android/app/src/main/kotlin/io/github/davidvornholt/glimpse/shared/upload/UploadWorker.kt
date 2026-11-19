@@ -23,7 +23,7 @@ class UploadWorker(
         val api = graph.api(session)
         val store = graph.captures
         // The server's answers go to the feed too, so the photo shows the note the phone just sent.
-        val target = ApiTarget(api, store) { photo -> if (photo.readyAt != null) graph.feed.upsert(photo) }
+        val target = ApiTarget(api, store) { photo -> if (photo.readyAt != null) graph.feed.upsert(session, photo) }
         val runner = UploadRunner(target, store, graph.uploads::reportProgress)
         val outcome =
             try {
