@@ -132,8 +132,10 @@ centre() {
 }
 
 alive() {
-  if adb logcat -b crash -d | grep -Fq "$package"; then
-    adb logcat -b crash -d >"$out/crash.txt"
+  # Read into a file first: grep -q stops reading early, and pipefail would
+  # then count logcat's broken pipe as no crash.
+  adb logcat -b crash -d >"$out/crash.txt" || fail "couldn't read the crash log $1"
+  if grep -Fq "$package" "$out/crash.txt"; then
     fail "the app crashed $1: $(grep -m1 -E 'Exception|Error' "$out/crash.txt")"
   fi
   [ -n "$(adb shell pidof "$package" | tr -d '\r')" ] || fail "the app isn't running $1"
