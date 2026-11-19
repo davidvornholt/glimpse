@@ -40,6 +40,7 @@ class PhotoFeed(
     private val all = MutableStateFlow<Map<String, Photo>>(emptyMap())
     private val waitingCount = MutableStateFlow(0)
     private val state = MutableStateFlow(Connection.Offline)
+    private val complete = MutableStateFlow<Instant?>(null)
     private val newlyViewed = MutableSharedFlow<String>(extraBufferCapacity = 16)
     private var job: Job? = null
 
@@ -49,6 +50,12 @@ class PhotoFeed(
     val waiting: StateFlow<Int> = waitingCount.asStateFlow()
 
     val connection: StateFlow<Connection> = state.asStateFlow()
+
+    /**
+     * While the stream is live, the time since which [photos] holds every photo
+     * on the server; null when it may have missed a change.
+     */
+    val listedSince: StateFlow<Instant?> = complete.asStateFlow()
 
     /** The id of each photo the moment an agent first looks at it. */
     val viewed: SharedFlow<String> = newlyViewed.asSharedFlow()
@@ -62,6 +69,7 @@ class PhotoFeed(
         job?.cancel()
         job = null
         state.value = Connection.Offline
+        complete.value = null
         waitingCount.value = 0
     }
 
@@ -69,6 +77,7 @@ class PhotoFeed(
         sessions.state.collectLatest { session ->
             if (session !is SessionState.Paired) {
                 all.value = emptyMap()
+                complete.value = null
                 waitingCount.value = 0
                 state.value = Connection.Offline
                 return@collectLatest
@@ -77,6 +86,7 @@ class PhotoFeed(
             var backoff = FIRST_BACKOFF
             while (true) {
                 state.value = Connection.Connecting
+                complete.value = null
                 try {
                     api.events().collect { event ->
                         when (event) {
@@ -110,6 +120,7 @@ class PhotoFeed(
                     // Offline or the server restarted; try again after a pause.
                 }
                 state.value = Connection.Offline
+                complete.value = null
                 waitingCount.value = 0
                 delay(backoff.toMillis())
                 backoff = minOf(backoff.multipliedBy(2), MAX_BACKOFF)
@@ -138,6 +149,7 @@ class PhotoFeed(
             cursor = page.nextCursor
         } while (cursor != null && photos.size < MAX_PHOTOS)
         all.value = photos.associateBy { it.id }
+        complete.value = since.takeIf { cursor == null }
     }
 
     fun upsert(photo: Photo) {

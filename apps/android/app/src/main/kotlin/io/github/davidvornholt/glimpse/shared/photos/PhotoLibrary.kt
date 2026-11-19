@@ -62,7 +62,16 @@ class PhotoLibrary(
     /** The photos waiting for an undo, and those whose delete hasn't reached the server yet. */
     private val hiddenOrDeleting = combine(hidden, deletes.pending, Set<String>::plus)
 
+    /** The server's photos, and since when they are complete. */
+    private val server = combine(feed.photos, feed.listedSince, ::Pair)
+
     init {
+        // A photo deleted on the server goes from the phone too, once its upload has nothing left to do.
+        scope.launch {
+            combine(captures.records, server) { records, (remote, listedSince) ->
+                records.values.filter { it.isDone && GalleryItem.isDeletedOnServer(it, remote[it.id], listedSince) }
+            }.collect { deleted -> deleted.forEach { captures.remove(it.id) } }
+        }
         scope.launch {
             captures.load()
             captures.prune()
@@ -74,14 +83,22 @@ class PhotoLibrary(
 
     /** Every photo, newest first. */
     val items: StateFlow<List<GalleryItem>> =
-        combine(captures.records, feed.photos, uploads.progress, pending, hiddenOrDeleting) { records, remote, progress, pending, hidden ->
+        combine(
+            captures.records,
+            server,
+            uploads.progress,
+            pending,
+            hiddenOrDeleting,
+        ) { records, (remote, listedSince), progress, pending, hidden ->
             val api = (sessions.state.value as? SessionState.Paired)?.session?.let(apiFor)
             val ids = records.keys + remote.keys + pending.keys - hidden
             ids
                 .mapNotNull { id ->
                     val record = records[id]
                     val waiting = pending[id]
-                    if (record == null && remote[id] == null && waiting != null) {
+                    if (record != null && GalleryItem.isDeletedOnServer(record, remote[id], listedSince)) {
+                        null
+                    } else if (record == null && remote[id] == null && waiting != null) {
                         preparing(waiting)
                     } else {
                         GalleryItem.merge(
