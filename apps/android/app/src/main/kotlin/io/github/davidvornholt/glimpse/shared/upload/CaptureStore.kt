@@ -12,8 +12,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import java.io.File
 import java.io.IOException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.time.Instant
 
@@ -110,8 +108,9 @@ class CaptureStore(
                             // A record this version can't read stays on disk, so the
                             // photo it describes isn't lost with it.
                             read(meta)?.let { record ->
-                                // Renaming the directory commits a new registration even if the
-                                // process stops before its metadata can be rewritten.
+                                // Versions that renewed a photo's id on pairing again renamed its
+                                // directory first, so a process that stopped before the metadata
+                                // was rewritten left the new id only in the directory's name.
                                 if (record.id == directory.name) record else record.freshRegistration(directory.name)
                             }
                         } else {
@@ -169,25 +168,6 @@ class CaptureStore(
                 }
             }
             next
-        }
-
-    /**
-     * Moves a photo and both its image files to [newId], so its upload starts again from scratch.
-     * A worker for the old id can no longer edit the record.
-     */
-    suspend fun renewRegistration(
-        id: String,
-        newId: String,
-    ): CaptureRecord? =
-        mutex.withLock {
-            loadLocked()
-            val record = all.value[id] ?: return@withLock null
-            val fresh = record.freshRegistration(newId)
-            withContext(Dispatchers.IO) {
-                Files.move(directory(id).toPath(), directory(newId).toPath(), StandardCopyOption.ATOMIC_MOVE)
-                all.value = all.value - id + (newId to fresh)
-            }
-            fresh
         }
 
     private fun CaptureRecord.freshRegistration(newId: String) =

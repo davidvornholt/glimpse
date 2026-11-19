@@ -426,12 +426,8 @@ class PhotoLibrary(
             val previous = sessions.lastServer()
             when {
                 session == null -> clear()
-
                 previous == null -> Unit
-
-                // Before the new session is saved, so if the process dies here the next pairing renews the photos again.
                 PairingLink.sameServer(previous, session.server) -> prepareForNewDevice()
-
                 else -> clear()
             }
             if (session == null) {
@@ -470,21 +466,19 @@ class PhotoLibrary(
 
     /**
      * Readies the photos for the new device that pairing again with the same server creates.
-     * The server lets only the device that registered a photo send its images, so every photo
-     * with an image still to send starts over under a fresh id; one whose preview the old device
-     * sent shows twice until that copy expires. A photo with all its images on the server keeps
-     * its id, because any device may change its note, and so does one hidden for a delete, so
-     * the delete still finds it.
+     * Each photo keeps its id, because the server lets a new device carry on the uploads its
+     * earlier device started, so nothing shows twice and a delete, an Undo or a note edited on
+     * the server still applies to the photo it was for. The old device's work stops here, and
+     * [resumeUploads] queues it again for the new one once its session is saved. A photo that
+     * failed is tried again like [retry] does, because released versions took the server's
+     * refusals of another device for a rejection or a conflict.
      */
     private suspend fun prepareForNewDevice() {
         uploads.cancelAll()
         captures.load()
-        val waitingForDelete = hidden.value + listOfNotNull(undo.current()?.id)
         captures.records.value.values
-            .filter { record ->
-                val imagesLeft = !record.registered || !record.previewSent || (!record.originalSent && !record.originalSkipped)
-                imagesLeft && !record.deletedOnServer && record.id !in waitingForDelete
-            }.forEach { captures.renewRegistration(it.id, ids.next()) }
+            .filter { it.failure != null && !it.deletedOnServer }
+            .forEach { failed -> captures.update(failed.id) { it.copy(failure = null, registrations = 0) } }
     }
 
     /** Queues every unfinished upload that has no work, such as those that waited while the phone was unpaired. */
