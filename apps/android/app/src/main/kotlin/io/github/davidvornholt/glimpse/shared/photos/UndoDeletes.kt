@@ -24,11 +24,12 @@ data class PendingDelete(
     val deadline: Long,
 )
 
-/** The deadline and the decision survive the activity. A new process settles an overdue delete. */
+/** The deadline and the decision survive the activity. A running process settles a delete at its deadline. */
 class UndoDeletes(
     private val store: DataStore<Preferences>,
     scope: CoroutineScope,
     private val now: () -> Long,
+    private val wake: suspend (deadline: Long) -> Unit,
     private val delete: suspend (id: String, server: String) -> Unit,
 ) {
     private val mutex = Mutex()
@@ -71,6 +72,23 @@ class UndoDeletes(
 
     suspend fun current(): PendingDelete? = saved.first()
 
+    /** For the work [wake] scheduled: settles the pending delete once its deadline has passed. False when that failed. */
+    suspend fun settleDue(): Boolean {
+        val item =
+            try {
+                // Under the lock, so a delete that start is still saving is seen. The lock is let go before the wait,
+                // so an Undo can still come first.
+                mutex.withLock { saved.first() } ?: return true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // As in settle, storage may have failed, so the work is tried again.
+                return false
+            }
+        delay((item.deadline - now()).coerceAtLeast(0))
+        return settle(item)
+    }
+
     suspend fun start(
         id: String,
         server: String,
@@ -79,12 +97,20 @@ class UndoDeletes(
         try {
             val previous = saved.first()
             if (previous?.id == id) return@withLock
-            if (previous != null) delete(previous.id, previous.server)
+            if (previous != null) {
+                delete(previous.id, previous.server)
+                // Cleared at once, so the earlier photo can't be undone after its delete is queued, even if the new
+                // one then fails to start.
+                store.edit { it.clear() }
+            }
+            val started = now()
+            val deadline = started + timeout.coerceAtMost(Long.MAX_VALUE - started)
+            // Scheduled before it is saved, so a process that dies right after still wakes for it.
+            wake(deadline)
             store.edit {
                 it[ID] = id
                 it[SERVER] = server
-                val started = now()
-                it[DEADLINE] = started + timeout.coerceAtMost(Long.MAX_VALUE - started)
+                it[DEADLINE] = deadline
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
