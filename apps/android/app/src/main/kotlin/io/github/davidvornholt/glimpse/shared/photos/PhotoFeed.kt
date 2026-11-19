@@ -128,17 +128,6 @@ class PhotoFeed(
         }
     }
 
-    /** Fetches the list again, for pull to refresh. */
-    suspend fun refresh(session: Session) {
-        try {
-            load(apiFor(session))
-        } catch (error: ApiException) {
-            if (error.tag == ApiErrorTag.Unauthorized) sessions.markRemoved(session.token)
-        } catch (_: IOException) {
-            // The list stays as it was; the stream catches up when it reconnects.
-        }
-    }
-
     private suspend fun load(api: GlimpseApi) {
         val since = Instant.now().minus(WINDOW)
         val photos = mutableListOf<Photo>()

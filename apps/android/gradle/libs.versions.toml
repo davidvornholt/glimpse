@@ -2,9 +2,8 @@
 agp = "9.5.1"
 kotlin = "2.4.21"
 compose-bom = "2026.09.00"
-# Material 3 1.4.0, the newest stable release, keeps the Expressive APIs
-# (MotionScheme.expressive(), MaterialShapes, LoadingIndicator) internal.
-# They became public in 1.5.0, whose release candidate this uses.
+# The Expressive APIs (MotionScheme.expressive(), MaterialShapes,
+# LoadingIndicator) are public from Material 3 1.5.0.
 material3 = "1.5.0-rc01"
 activity = "1.13.0"
 core = "1.19.1"

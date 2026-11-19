@@ -30,8 +30,6 @@ const gitOutput = (cwd: string, args: ReadonlyArray<string>): string => {
 const lines = (text: string): Array<string> =>
   text.split('\n').filter((line) => line.length > 0);
 
-// Answers the release plan's questions with git, for `head` in the repository
-// that contains `cwd`.
 export const gitHistory = (cwd: string, head = 'HEAD'): ReleaseHistory => ({
   tags: lines(gitOutput(cwd, ['tag', '--list', 'android-v*'])),
   isAncestor: (tag) => {

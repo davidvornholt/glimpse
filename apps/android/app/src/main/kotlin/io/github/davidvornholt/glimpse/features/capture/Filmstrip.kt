@@ -25,7 +25,7 @@ import io.github.davidvornholt.glimpse.shared.ui.sharedPhotoKey
 /** The origin of shared-element keys for photos opened from the filmstrip. */
 const val FILMSTRIP = "filmstrip"
 
-/** Today's photos, newest first, under the shutter. */
+/** Today's photos, newest first. */
 @Composable
 fun Filmstrip(
     items: List<GalleryItem>,
