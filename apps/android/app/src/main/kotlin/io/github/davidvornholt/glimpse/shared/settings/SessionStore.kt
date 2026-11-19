@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
+import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
 import io.github.davidvornholt.glimpse.shared.security.TokenCipher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,14 +15,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.serialization.Serializable
-
-/** Identifies a pairing without storing its credentials with the photo. */
-@Serializable
-data class PairingId(
-    val server: String,
-    val deviceId: String,
-)
 
 /** The pairing this phone has with a server. The token stays in memory only. */
 data class Session(
@@ -30,8 +23,6 @@ data class Session(
     val deviceId: String,
     val deviceName: String,
 ) {
-    val pairing get() = PairingId(server, deviceId)
-
     override fun toString() = "Session(server=$server, deviceId=$deviceId, deviceName=$deviceName)"
 }
 
@@ -83,10 +74,14 @@ class SessionStore(
 
     suspend fun currentSession(): Session? = (current() as? SessionState.Paired)?.session
 
-    /** Read the committed pairing even before its change has reached the UI flow. */
-    suspend fun isCurrent(pairing: PairingId): Boolean {
+    /**
+     * Whether the phone is paired with [server], read from the committed pairing even before its
+     * change has reached the UI flow. Pairing again with the same server keeps its photos.
+     */
+    suspend fun isCurrent(server: String): Boolean {
         val prefs = store.data.first()
-        return prefs[TOKEN] != null && prefs[SERVER] == pairing.server && prefs[DEVICE_ID] == pairing.deviceId
+        val current = prefs[SERVER]
+        return prefs[TOKEN] != null && current != null && PairingLink.sameServer(current, server)
     }
 
     /** The server this phone was last paired with, even after it was removed. */

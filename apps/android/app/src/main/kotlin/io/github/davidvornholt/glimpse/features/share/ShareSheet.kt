@@ -55,7 +55,6 @@ import io.github.davidvornholt.glimpse.R
 import io.github.davidvornholt.glimpse.shared.haptics.Haptics
 import io.github.davidvornholt.glimpse.shared.photos.ImportResult
 import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
-import io.github.davidvornholt.glimpse.shared.settings.PairingId
 import io.github.davidvornholt.glimpse.shared.ui.NoteField
 import io.github.davidvornholt.glimpse.shared.ui.PhotoImage
 import kotlinx.coroutines.delay
@@ -67,7 +66,7 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun ShareSheet(
     images: List<Uri>,
-    pairing: PairingId?,
+    server: String?,
     library: PhotoLibrary,
     haptics: Haptics,
     onOpenApp: () -> Unit,
@@ -105,7 +104,7 @@ internal fun ShareSheet(
             Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp).imePadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (pairing == null && stage == Stage.Editing) {
+            if (server == null && stage == Stage.Editing) {
                 NotPaired(onOpenApp, onFinish)
                 return@Column
             }
@@ -137,8 +136,8 @@ internal fun ShareSheet(
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                                 TextButton(onClick = onFinish) { Text(stringResource(R.string.action_cancel)) }
-                                Button(enabled = pairing != null, onClick = {
-                                    pairing?.let {
+                                Button(enabled = server != null, onClick = {
+                                    server?.let {
                                         model.send(
                                             images,
                                             note.text

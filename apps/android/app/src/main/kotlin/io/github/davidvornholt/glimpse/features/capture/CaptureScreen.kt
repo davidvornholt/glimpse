@@ -92,7 +92,6 @@ import io.github.davidvornholt.glimpse.shared.photos.PhotoFeed
 import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
 import io.github.davidvornholt.glimpse.shared.settings.CaptureMode
 import io.github.davidvornholt.glimpse.shared.settings.FlashSetting
-import io.github.davidvornholt.glimpse.shared.settings.PairingId
 import io.github.davidvornholt.glimpse.shared.settings.SettingsStore
 import io.github.davidvornholt.glimpse.shared.ui.CameraPermissionPrompt
 import io.github.davidvornholt.glimpse.shared.ui.localDate
@@ -115,7 +114,7 @@ import kotlin.math.roundToInt
 fun CaptureScreen(
     library: PhotoLibrary,
     settingsStore: SettingsStore,
-    pairing: PairingId,
+    server: String,
     feed: PhotoFeed,
     haptics: Haptics,
     appScope: CoroutineScope,
@@ -197,7 +196,7 @@ fun CaptureScreen(
                                 PhotoSource.Scan,
                                 settingsStore.reservedNote(id),
                                 library.newBatch(pages.size, id),
-                                pairing,
+                                server,
                             )
                         added = result.added
                         when {

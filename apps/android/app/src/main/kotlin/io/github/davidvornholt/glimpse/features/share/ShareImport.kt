@@ -12,7 +12,6 @@ import io.github.davidvornholt.glimpse.shared.api.PhotoSource
 import io.github.davidvornholt.glimpse.shared.photos.ImageBatch
 import io.github.davidvornholt.glimpse.shared.photos.ImportResult
 import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
-import io.github.davidvornholt.glimpse.shared.settings.PairingId
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -22,7 +21,7 @@ internal enum class Stage { Editing, Sending, Sent, Partial, Failed }
 @Serializable
 private data class ShareRequest(
     val batch: ImageBatch,
-    val pairing: PairingId,
+    val server: String,
     val note: String?,
 )
 
@@ -46,11 +45,11 @@ internal class ShareImport(
     fun send(
         images: List<Uri>,
         note: String?,
-        pairing: PairingId,
+        server: String,
         library: PhotoLibrary,
     ) {
         if (stage != Stage.Editing && stage != Stage.Failed) return
-        val next = ShareRequest(library.newBatch(images.size), pairing, note)
+        val next = ShareRequest(library.newBatch(images.size), server, note)
         request = next
         saved["request"] = GlimpseJson.encodeToString(next)
         saved.remove<Int>("added")
@@ -69,7 +68,7 @@ internal class ShareImport(
             viewModelScope.launch {
                 val completed = saved.get<ArrayList<String>>("completed") ?: arrayListOf()
                 result =
-                    library.addImages(images, PhotoSource.Share, current.note, current.batch, current.pairing, completed.toSet()) {
+                    library.addImages(images, PhotoSource.Share, current.note, current.batch, current.server, completed.toSet()) {
                         completed.add(it)
                         saved["completed"] = completed
                     }

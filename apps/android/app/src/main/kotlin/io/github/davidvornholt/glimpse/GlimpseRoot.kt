@@ -284,7 +284,7 @@ private fun PairedContent(
                         CaptureScreen(
                             library = graph.library,
                             settingsStore = graph.settings,
-                            pairing = session.pairing,
+                            server = session.server,
                             feed = graph.feed,
                             haptics = graph.haptics,
                             appScope = graph.uiScope,

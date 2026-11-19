@@ -31,7 +31,7 @@ class ShareActivity : ComponentActivity() {
                 if (session !is SessionState.Loading) {
                     ShareSheet(
                         images = images,
-                        pairing = (session as? SessionState.Paired)?.session?.pairing,
+                        server = (session as? SessionState.Paired)?.session?.server,
                         library = graph.library,
                         haptics = graph.haptics,
                         onOpenApp = {

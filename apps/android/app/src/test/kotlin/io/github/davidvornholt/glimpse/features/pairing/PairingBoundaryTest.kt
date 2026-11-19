@@ -132,7 +132,35 @@ class PairingBoundaryTest {
     private suspend fun uploadAll(session: Session) {
         val target = remote.asDevice(session.deviceId)
         captures.records.value.keys
-            .forEach { UploadRunner(target, captures).run(it) }
+            .forEach { UploadRunner(target, captures).run(it, session.server) }
+    }
+
+    /** A shared photo the old device uploaded completely, whose note was changed on the phone since. */
+    private suspend fun TestScope.sendsOnlyTheNoteOfAnUploadedShare(note: String?) {
+        val claimer = claimer()
+        val shared = record.copy(source = PhotoSource.Share, server = old.server)
+        remote.registerAs(old.deviceId, shared.copy(note = "old caption"))
+        remote.photos[record.id] = remote.photos.getValue(record.id).copy(preview = "preview", original = "original")
+        val uploaded =
+            shared
+                .copy(
+                    note = "old caption",
+                    serverNote = "old caption",
+                    registered = true,
+                    previewSent = true,
+                    originalSent = true,
+                    registrations = 1,
+                ).withNote(note)
+        keep(uploaded, withOriginal = false)
+        uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+        assertEquals(listOf(UploadStep.Note to record.id), remote.requests)
+        assertEquals(note, remote.photos.getValue(record.id).note)
+        val kept =
+            captures.records.value.values
+                .single()
+        assertEquals(record.id, kept.id)
+        assertEquals(note, kept.serverNote)
+        assertEquals(0, kept.noteEdit)
     }
 
     /** The one capture went to the server again from scratch, under a fresh id the new device owns. */
@@ -264,6 +292,26 @@ class PairingBoundaryTest {
                 captures.records.value.values
                     .single(),
             )
+        }
+
+    @Test fun `a fully uploaded share sends its new note after pairing again with the same server`() =
+        runTest {
+            sendsOnlyTheNoteOfAnUploadedShare("new caption")
+        }
+
+    @Test fun `a fully uploaded share sends its removed note after pairing again with the same server`() =
+        runTest {
+            sendsOnlyTheNoteOfAnUploadedShare(null)
+        }
+
+    @Test fun `an unfinished share finishes uploading under the new device on the same server`() =
+        runTest {
+            val claimer = claimer()
+            val shared = record.copy(source = PhotoSource.Share, server = old.server)
+            remote.registerAs(old.deviceId, shared)
+            keep(shared.copy(registered = true, registrations = 1))
+            uploadAll(claimer.claim(link.copy(server = server), "Phone"))
+            assertUploadedAgain()
         }
 
     @Test fun `a photo waiting for its delete keeps its id, so the delete still finds it`() =

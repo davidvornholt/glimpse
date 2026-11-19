@@ -4,7 +4,6 @@ import io.github.davidvornholt.glimpse.shared.api.OriginalType
 import io.github.davidvornholt.glimpse.shared.api.PhotoMetadata
 import io.github.davidvornholt.glimpse.shared.api.PhotoSource
 import io.github.davidvornholt.glimpse.shared.api.Time
-import io.github.davidvornholt.glimpse.shared.settings.PairingId
 import kotlinx.serialization.Serializable
 
 /**
@@ -35,7 +34,8 @@ data class CaptureRecord(
     val failure: UploadFailure? = null,
     /** Zero once the server acknowledged the latest phone edit. Older records used the note difference. */
     val noteEdit: Long = if (registered && note != serverNote) 1 else 0,
-    val pairing: PairingId? = null,
+    /** The server the photo was imported for, so it never goes to a server paired later. Pairing again with it keeps the photo. */
+    val server: String? = null,
 ) {
     fun withNote(value: String?) = copy(note = value, noteEdit = noteEdit + 1)
 

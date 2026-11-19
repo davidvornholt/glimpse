@@ -13,7 +13,6 @@ import io.github.davidvornholt.glimpse.shared.image.Gallery
 import io.github.davidvornholt.glimpse.shared.image.ImageProcessor
 import io.github.davidvornholt.glimpse.shared.image.UnusableImageException
 import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
-import io.github.davidvornholt.glimpse.shared.settings.PairingId
 import io.github.davidvornholt.glimpse.shared.settings.Session
 import io.github.davidvornholt.glimpse.shared.settings.SessionState
 import io.github.davidvornholt.glimpse.shared.settings.SessionStore
@@ -255,13 +254,13 @@ class PhotoLibrary(
         source: PhotoSource,
         note: String?,
         batch: ImageBatch,
-        pairing: PairingId,
+        server: String,
         completed: Set<String> = emptySet(),
         onAdded: (String) -> Unit = {},
     ): ImportResult {
         require(uris.size == batch.photoIds.size)
 
-        suspend fun stillPaired() = sessions.isCurrent(pairing)
+        suspend fun stillPaired() = sessions.isCurrent(server)
         return batch.import(
             alreadyAdded = { it in completed || captures.get(it) != null },
             stillPaired = ::stillPaired,
@@ -280,7 +279,7 @@ class PhotoLibrary(
                         prepared.type,
                         note = note.takeIf { first && !it.isNullOrBlank() },
                         batchId = batch.id,
-                        pairing = pairing,
+                        server = server,
                     )
                 pairingChanges.withLock {
                     if (!stillPaired()) {

@@ -179,7 +179,7 @@ class CaptureStore(
         }
 
     private fun CaptureRecord.freshRegistration(newId: String) =
-        CaptureRecord(newId, takenAt, source, width, height, originalType, note, batchId, pairing = pairing)
+        CaptureRecord(newId, takenAt, source, width, height, originalType, note, batchId, server = server)
 
     suspend fun remove(id: String) =
         mutex.withLock {
