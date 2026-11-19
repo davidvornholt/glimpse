@@ -124,9 +124,11 @@ dump() {
   adb exec-out cat /sdcard/ui.xml >"$screen"
 }
 
-# The centre of the first element whose text or description is $1.
+# The centre of the first element whose text or description is $1, and that
+# is enabled if $2 is "enabled".
 centre() {
-  grep -o "<node [^>]*\(text\|content-desc\)=\"$1\"[^>]*>" "$screen" | head -1 |
+  grep -o "<node [^>]*\(text\|content-desc\)=\"$1\"[^>]*>" "$screen" |
+    if [ "${2:-}" = enabled ]; then grep -F ' enabled="true"'; else cat; fi | head -1 |
     sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p' |
     awk '{ print int(($1 + $3) / 2), int(($2 + $4) / 2) }'
 }
@@ -141,22 +143,24 @@ alive() {
   [ -n "$(adb shell pidof "$package" | tr -d '\r')" ] || fail "the app isn't running $1"
 }
 
-# Waits up to $2 seconds (default 30) for an element labelled $1 to show.
+# Waits up to $2 seconds (default 30) for an element labelled $1 to show, and
+# to be enabled if $3 is "enabled".
 wait_for() {
   local seconds=${2:-30}
   for _ in $(seq "$seconds"); do
-    if dump && [ -n "$(centre "$1")" ]; then return 0; fi
+    if dump && [ -n "$(centre "$1" "${3:-}")" ]; then return 0; fi
     sleep 1
   done
   cp "$screen" "$out/ui.xml" 2>/dev/null || true
   alive "while waiting for \"$1\""
-  fail "\"$1\" didn't show within $seconds s"
+  fail "\"$1\" didn't show${3:+ $3} within $seconds s"
 }
 
+# The shutter shows while the camera starts, but ignores taps until it's ready.
 tap() {
-  wait_for "$1" "${2:-30}"
+  wait_for "$1" "${2:-30}" enabled
   # shellcheck disable=SC2046 # The two coordinates are separate arguments.
-  adb shell input tap $(centre "$1")
+  adb shell input tap $(centre "$1" enabled)
 }
 
 adb shell am start -W -n "$package/.MainActivity" >/dev/null
