@@ -19,6 +19,12 @@ class UndoAlarm(
 
     /** Only the newest delete can be waiting for Undo, so its deadline replaces any earlier one. */
     suspend fun wakeAt(deadline: Long) {
+        // Long.MAX_VALUE is how UndoDeletes.start marks an Undo that never runs out. WorkManager rejects a delay that
+        // long, and there is nothing to wake for.
+        if (deadline == Long.MAX_VALUE) {
+            workManager.cancelUniqueWork(NAME).await()
+            return
+        }
         val request =
             OneTimeWorkRequestBuilder<UndoDeadlineWorker>()
                 .setInitialDelay((deadline - now()).coerceAtLeast(0), TimeUnit.MILLISECONDS)
