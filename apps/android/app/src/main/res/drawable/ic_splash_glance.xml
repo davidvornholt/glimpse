@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launch splash: the launcher icon's eye looks ahead, then glances to
+     the side and settles where the launcher icon has it. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector
+            android:width="108dp"
+            android:height="108dp"
+            android:viewportWidth="108"
+            android:viewportHeight="108">
+            <path
+                android:fillColor="#FFF3E6"
+                android:pathData="M24,54A34,34 0,0 1,84 54A34,34 0,0 1,24 54Z" />
+            <group
+                android:name="pupil"
+                android:translateX="-12">
+                <path
+                    android:fillColor="#2A1A16"
+                    android:pathData="M53,54a13,13 0,1 1,26 0a13,13 0,1 1,-26 0Z" />
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="pupil">
+        <aapt:attr name="android:animation">
+            <objectAnimator
+                android:duration="260"
+                android:interpolator="@android:interpolator/fast_out_slow_in"
+                android:propertyName="translateX"
+                android:startOffset="180"
+                android:valueFrom="-12"
+                android:valueTo="0"
+                android:valueType="floatType" />
+        </aapt:attr>
+    </target>
+</animated-vector>

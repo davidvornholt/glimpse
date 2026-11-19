@@ -7,10 +7,13 @@
     </style>
 
     <!-- The viewfinder is black, so the splash screen is too, and the camera
-         appears without a flash of color. -->
-    <style name="Theme.Glimpse.Starting" parent="Theme.SplashScreen">
+         appears without a flash of color. The icon sits in its launcher
+         color and glances to the side while the app starts. -->
+    <style name="Theme.Glimpse.Starting" parent="Theme.SplashScreen.IconBackground">
         <item name="windowSplashScreenBackground">@color/viewfinder</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_glance</item>
+        <item name="windowSplashScreenAnimationDuration">440</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
         <item name="postSplashScreenTheme">@style/Theme.Glimpse</item>
     </style>
 
