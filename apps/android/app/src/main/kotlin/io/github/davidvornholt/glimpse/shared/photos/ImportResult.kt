@@ -10,9 +10,7 @@ data class ImportResult(
 ) {
     val failed: Int get() = total - added
 
-    /** Every image was taken in. */
     val isComplete: Boolean get() = total > 0 && added == total
 
-    /** Some images were taken in and some weren't. */
     val isPartial: Boolean get() = added in 1 until total
 }
