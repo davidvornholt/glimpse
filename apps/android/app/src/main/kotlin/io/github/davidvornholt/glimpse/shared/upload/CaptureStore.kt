@@ -1,6 +1,7 @@
 package io.github.davidvornholt.glimpse.shared.upload
 
 import io.github.davidvornholt.glimpse.shared.api.GlimpseJson
+import io.github.davidvornholt.glimpse.shared.api.OriginalType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -163,6 +164,23 @@ class CaptureStore(
             }
             all.value = emptyMap()
             loaded.value = true
+        }
+
+    /**
+     * How many originals [clear] would delete that the server doesn't have. A directory whose
+     * record can't be read counts when it holds an original, and a record whose original is
+     * gone doesn't. An original the server refused as too large stays here and counts.
+     */
+    suspend fun unsentOriginals(): Int =
+        mutex.withLock {
+            loadLocked()
+            withContext(Dispatchers.IO) {
+                root.listFiles().orEmpty().count { directory ->
+                    val record = all.value[directory.name]
+                    val held = OriginalType.entries.any { File(directory, "original.${it.extension}").isFile }
+                    held && record?.originalSent != true && record?.deletedOnServer != true
+                }
+            }
         }
 
     /** Drops uploaded photos the server has deleted by now. */

@@ -371,11 +371,7 @@ class PhotoLibrary(
         hidden.value = emptySet()
     }
 
-    suspend fun unsentCount(): Int {
-        captures.load()
-        return captures.records.value.values
-            .count { !it.originalSent && !it.deletedOnServer }
-    }
+    suspend fun unsentCount(): Int = captures.unsentOriginals()
 
     /**
      * Readies the photos for the new device that pairing again with the same server creates.

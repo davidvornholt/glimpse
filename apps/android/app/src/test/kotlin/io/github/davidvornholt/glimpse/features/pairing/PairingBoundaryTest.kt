@@ -131,9 +131,24 @@ class PairingBoundaryTest {
         runTest {
             val claimer = claimer()
             state.value = SessionState.Unpaired(server)
-            captures.prepare(record.id)
-            captures.add(record)
+            keep(record)
             assertEquals(PairingClaimer.SwitchWarning(server, 1), claimer.switchWarning(link))
+        }
+
+    @Test fun `counts an original whose record can't be read`() =
+        runTest {
+            val claimer = claimer()
+            val directory = captures.directory(record.id).apply { mkdirs() }
+            File(directory, "meta.json").writeText("{ not a record")
+            File(directory, "original.jpg").writeText("original")
+            assertEquals(PairingClaimer.SwitchWarning(server, 1), claimer.switchWarning(link))
+        }
+
+    @Test fun `doesn't count a photo whose original is already gone`() =
+        runTest {
+            val claimer = claimer()
+            keep(record, withOriginal = false)
+            assertEquals(PairingClaimer.SwitchWarning(server, 0), claimer.switchWarning(link))
         }
 
     @Test fun `keeps captures on a previously stored default port`() =
