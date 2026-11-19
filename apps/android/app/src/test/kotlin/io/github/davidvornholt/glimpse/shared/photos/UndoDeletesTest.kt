@@ -1,18 +1,23 @@
 package io.github.davidvornholt.glimpse.shared.photos
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
+import java.io.IOException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class UndoDeletesTest {
@@ -53,5 +58,33 @@ class UndoDeletesTest {
             runCurrent()
             assertEquals(listOf("first"), deleted)
             assertNull(undo.pending.value)
+        }
+
+    @Test
+    fun `a delete that fails at the deadline stays pending and is tried again`() =
+        runTest {
+            val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
+            val deleted = mutableListOf<String>()
+            var failures = 1
+            val crashes = mutableListOf<Throwable>()
+            // Like the app's scope, where an exception nobody catches ends the process.
+            val appScope = CoroutineScope(coroutineContext + SupervisorJob() + CoroutineExceptionHandler { _, error -> crashes += error })
+            val undo =
+                UndoDeletes(store, appScope, { testScheduler.currentTime }) { id, _ ->
+                    if (failures-- > 0) throw IOException("No space left on device")
+                    deleted.add(id)
+                }
+            undo.start("photo", server, 8000)
+            advanceTimeBy(8001)
+            runCurrent()
+            assertEquals(emptyList(), crashes)
+            assertTrue(appScope.isActive)
+            assertEquals("photo", undo.pending.value?.id)
+            assertEquals(emptyList(), deleted)
+            advanceTimeBy(UndoDeletes.RETRY_MILLIS)
+            runCurrent()
+            assertEquals(listOf("photo"), deleted)
+            assertNull(undo.pending.value)
+            appScope.cancel()
         }
 }

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
@@ -44,16 +45,29 @@ class UndoDeletes(
             pending.collectLatest { item ->
                 if (item != null) {
                     delay((item.deadline - now()).coerceAtLeast(0))
-                    mutex.withLock {
-                        if (saved.first() == item) {
-                            delete(item.id, item.server)
-                            store.edit { it.clear() }
-                        }
-                    }
+                    while (!settle(item)) delay(RETRY_MILLIS)
                 }
             }
         }
     }
+
+    /** Deletes [item] unless Undo or a newer delete replaced it. False when that failed and is worth another try. */
+    private suspend fun settle(item: PendingDelete): Boolean =
+        mutex.withLock {
+            try {
+                if (saved.first() == item) {
+                    delete(item.id, item.server)
+                    store.edit { it.clear() }
+                }
+                true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Storage or WorkManager failed, perhaps because the phone is full. An exception here would end the
+                // app, and the next launch would hit the same overdue delete, so it stays saved and is tried again.
+                false
+            }
+        }
 
     suspend fun current(): PendingDelete? = saved.first()
 
@@ -83,9 +97,11 @@ class UndoDeletes(
 
     suspend fun clear() = mutex.withLock { store.edit { it.clear() } }
 
-    private companion object {
-        val ID = stringPreferencesKey("id")
-        val SERVER = stringPreferencesKey("server")
-        val DEADLINE = longPreferencesKey("deadline")
+    internal companion object {
+        const val RETRY_MILLIS = 30_000L
+
+        private val ID = stringPreferencesKey("id")
+        private val SERVER = stringPreferencesKey("server")
+        private val DEADLINE = longPreferencesKey("deadline")
     }
 }
