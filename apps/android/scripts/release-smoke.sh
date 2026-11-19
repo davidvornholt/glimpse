@@ -100,8 +100,15 @@ fi
 # Android 14 that store comes from the Conscrypt APEX, so a copy of the store
 # with the certificate is mounted over both places, in this shell's mount
 # namespace and in those of the zygotes that start apps.
-adb root >/dev/null
-adb wait-for-device
+# adb root restarts adbd and can lose its own reply when that is quick, so
+# what counts is whether the shell then runs as root.
+for _ in $(seq 10); do
+  adb root >/dev/null 2>&1 || true
+  adb wait-for-device
+  [ "$(adb shell id -u | tr -d '\r')" = 0 ] && break
+  sleep 2
+done
+[ "$(adb shell id -u | tr -d '\r')" = 0 ] || fail "couldn't get root on the emulator"
 until [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = 1 ]; do sleep 1; done
 adb reverse "tcp:$proxy_port" "tcp:$proxy_port" >/dev/null
 hash=$(openssl x509 -subject_hash_old -noout -in "$work/ca.pem")
