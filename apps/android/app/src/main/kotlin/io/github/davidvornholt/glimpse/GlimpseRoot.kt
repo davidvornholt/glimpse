@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -66,6 +67,7 @@ import io.github.davidvornholt.glimpse.shared.settings.CaptureMode
 import io.github.davidvornholt.glimpse.shared.settings.Session
 import io.github.davidvornholt.glimpse.shared.settings.SessionState
 import io.github.davidvornholt.glimpse.shared.ui.LocalSharedTransitionScope
+import io.github.davidvornholt.glimpse.shared.ui.LocalViewerSettled
 import io.github.davidvornholt.glimpse.shared.ui.backGesture
 import io.github.davidvornholt.glimpse.shared.ui.localDate
 import io.github.davidvornholt.glimpse.shared.ui.rememberPredictiveBack
@@ -202,6 +204,8 @@ private fun PairedContent(
 
     val sheetExpanded = sheet.currentValue == SheetValue.Expanded
     val hiddenKey = viewerId?.takeIf { viewerOpen }?.let { sharedPhotoKey(viewerOrigin, it) }
+    val viewerShown = updateTransition(viewerOpen && viewerId != null, label = "viewer")
+    val viewerSettled = viewerShown.currentState && viewerShown.targetState
     val today = LocalDate.now()
     val todays = items.filter { it.sentAt.localDate() == today }
     val open: (String, GalleryItem) -> Unit = { origin, item ->
@@ -225,7 +229,7 @@ private fun PairedContent(
     BackHandler(enabled = sheetExpanded && !viewerOpen && !settingsOpen) { scope.launch { sheet.partialExpand() } }
 
     SharedTransitionLayout {
-        CompositionLocalProvider(LocalSharedTransitionScope provides this) {
+        CompositionLocalProvider(LocalSharedTransitionScope provides this, LocalViewerSettled provides viewerSettled) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
                 val navigationBar = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
@@ -280,7 +284,7 @@ private fun PairedContent(
                 }
                 GlimpseTheme(darkTheme = true) {
                     PhotoViewer(
-                        visible = viewerOpen,
+                        shown = viewerShown,
                         items = if (viewerOrigin == FILMSTRIP) todays else items,
                         origin = viewerOrigin,
                         currentId = viewerId,
