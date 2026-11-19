@@ -31,9 +31,11 @@ pids=()
 cleanup() {
   local status=$?
   if [ "$status" != 0 ]; then
-    adb logcat -d >"$out/logcat.txt" 2>/dev/null || true
-    adb exec-out screencap -p >"$out/screen.png" 2>/dev/null || true
+    # The UI dump is already on disk. adb can hang, so it goes after the dump
+    # and gets 10 s a read, within the 30 s the CI timeout leaves after its kill.
     cp "$screen" "$out/ui.xml" 2>/dev/null || true
+    timeout 10 adb logcat -d >"$out/logcat.txt" 2>/dev/null || true
+    timeout 10 adb exec-out screencap -p >"$out/screen.png" 2>/dev/null || true
     echo "release smoke test failed; logs and the last screen are in $out." >&2
   fi
   for pid in "${pids[@]}"; do
@@ -212,6 +214,7 @@ tap 'Scan document'
 # ready yet; either shows that the code starting it ran. The message goes
 # after 4 s, so the loop doesn't sleep between looks.
 scanner=
+tapped=$SECONDS
 deadline=$((SECONDS + 30))
 while [ -z "$scanner" ] && [ "$SECONDS" -lt "$deadline" ]; do
   resumed=$(adb shell dumpsys activity activities | grep ResumedActivity || true)
@@ -225,6 +228,8 @@ if [ -z "$scanner" ]; then
   fail "neither the document scanner nor the message that it isn't ready showed within 30 s"
 fi
 echo "document scanner: $scanner"
+# A crash in the code that runs once the scanner is up takes a few seconds.
+sleep $((tapped + 10 > SECONDS ? tapped + 10 - SECONDS : 0))
 alive 'after opening the document scanner'
 
 echo 'release smoke test passed'
