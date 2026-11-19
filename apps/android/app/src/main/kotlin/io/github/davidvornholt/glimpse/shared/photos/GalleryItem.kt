@@ -74,7 +74,8 @@ data class GalleryItem(
                         id = id,
                         sentAt = remote?.createdAt ?: Instant.ofEpochMilli(UlidGenerator.timeOf(id)),
                         takenAt = record.takenAt,
-                        note = record.note,
+                        // An agent may have changed the note with `glimpse note`; an edit the phone hasn't sent yet still wins.
+                        note = if (remote != null && record.note == record.serverNote) remote.note else record.note,
                         source = record.source,
                         width = record.width,
                         height = record.height,
