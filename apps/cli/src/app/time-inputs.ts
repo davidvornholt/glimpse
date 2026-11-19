@@ -6,6 +6,7 @@ const wallClockPattern =
   /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})(?:[T ](?<hour>\d{2}):(?<minute>\d{2})(?::(?<second>\d{2}))?)?$/u;
 const instantPattern =
   /T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})$/iu;
+const writtenClockPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?/iu;
 
 const units = {
   m: 'minutes',
@@ -73,6 +74,27 @@ const wallClockParts = (text: string): Option.Option<WallClock> => {
     : Option.some(parts);
 };
 
+/** Whether the day is in the calendar; February 30 would roll over to March. */
+const isCalendarDay = ({ year, month, day }: WallClock) =>
+  Option.exists(DateTime.make({ year, month, day }), (time) => {
+    const made = DateTime.toPartsUtc(time);
+    return made.day === day && made.month === month;
+  });
+
+/**
+ * An instant with an offset, if the date and time written in it exist. Parsing
+ * alone would move an impossible one, such as February 30, to a real one.
+ */
+const instant = (text: string) => {
+  const written = Option.flatMap(
+    Option.fromNullishOr(writtenClockPattern.exec(text)?.[0].toUpperCase()),
+    wallClockParts,
+  );
+  return Option.exists(written, isCalendarDay)
+    ? Option.map(DateTime.make(text), DateTime.formatIso)
+    : Option.none<string>();
+};
+
 /** A day or wall-clock time in this machine's time zone. */
 const local = (parts: WallClock, bound: Bound) =>
   Effect.gen(function* () {
@@ -116,7 +138,7 @@ export const parseTime = (flag: string, value: string, bound: Bound) =>
       return relative.value;
     }
     const parsed = instantPattern.test(text)
-      ? Option.map(DateTime.make(text), DateTime.formatIso)
+      ? instant(text)
       : yield* Option.match(wallClockParts(text), {
           onNone: () => Effect.succeedNone,
           onSome: (parts) => local(parts, bound),
