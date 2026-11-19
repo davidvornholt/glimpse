@@ -175,6 +175,7 @@ private fun ViewerContent(
             val item = items[page]
             ZoomableImage(
                 onTap = { chrome = !chrome },
+                tapLabel = stringResource(if (chrome) R.string.viewer_hide_controls else R.string.viewer_show_controls),
                 onZoomedChange = { zoomed ->
                     if (zoomed) {
                         zoomedId = item.id

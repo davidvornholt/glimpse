@@ -3,11 +3,14 @@ package io.github.davidvornholt.glimpse.features.photos
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.core.content.FileProvider
 import io.github.davidvornholt.glimpse.R
 import io.github.davidvornholt.glimpse.shared.api.ApiException
 import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
+import io.github.davidvornholt.glimpse.shared.photos.PhotoExport
 import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,14 +34,13 @@ class PhotoActions(
 
     fun save(item: GalleryItem) {
         scope.launch {
+            val photo = exportFor(item, R.string.viewer_save_preview) ?: return@launch
             val result =
                 try {
-                    library.saveToGallery(item)
+                    library.saveToGallery(item.id, photo)
                     R.string.viewer_saved
                 } catch (_: IOException) {
                     R.string.viewer_save_failed
-                } catch (_: ApiException) {
-                    R.string.viewer_download_failed
                 }
             snackbar.showSnackbar(message(result))
         }
@@ -50,13 +52,13 @@ class PhotoActions(
         from: Context,
     ) {
         scope.launch {
+            val photo = exportFor(item, R.string.viewer_share_preview) ?: return@launch
             try {
-                val (file, type) = library.fileFor(item)
-                val shared = withContext(Dispatchers.IO) { shareableCopy(file, "glimpse-${item.id}.${type.extension}") }
+                val shared = withContext(Dispatchers.IO) { shareableCopy(photo.file, photo.displayName(item.id)) }
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", shared)
                 val send =
                     Intent(Intent.ACTION_SEND)
-                        .setType(type.mimeType)
+                        .setType(photo.type.mimeType)
                         .putExtra(Intent.EXTRA_STREAM, uri)
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 send.clipData = ClipData.newRawUri(null, uri)
@@ -64,10 +66,35 @@ class PhotoActions(
                 from.startActivity(Intent.createChooser(send, null))
             } catch (_: IOException) {
                 snackbar.showSnackbar(message(R.string.viewer_share_failed))
-            } catch (_: ApiException) {
-                snackbar.showSnackbar(message(R.string.viewer_download_failed))
             }
         }
+    }
+
+    private suspend fun exportFor(
+        item: GalleryItem,
+        previewAction: Int,
+    ): PhotoExport? {
+        val photo =
+            try {
+                library.fileFor(item)
+            } catch (_: IOException) {
+                null
+            } catch (_: ApiException) {
+                null
+            }
+        if (photo == null) {
+            snackbar.showSnackbar(message(R.string.viewer_download_failed))
+            return null
+        }
+        if (!photo.isPreview) return photo
+        val answer =
+            snackbar.showSnackbar(
+                message = message(R.string.viewer_original_unavailable),
+                actionLabel = message(previewAction),
+                withDismissAction = true,
+                duration = SnackbarDuration.Indefinite,
+            )
+        return photo.takeIf { answer == SnackbarResult.ActionPerformed }
     }
 
     /** Hides the photo at once and deletes it unless the user undoes it in time. */

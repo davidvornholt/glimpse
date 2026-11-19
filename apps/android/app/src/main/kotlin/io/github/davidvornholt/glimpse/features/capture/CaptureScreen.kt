@@ -21,13 +21,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -68,6 +70,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -121,6 +124,7 @@ fun CaptureScreen(
     scanRequested: Boolean,
     onScanRequestHandled: () -> Unit,
     hiddenSharedKey: String?,
+    viewerPhotoId: String?,
     onOpenPhoto: (origin: String, item: GalleryItem) -> Unit,
     onOpenInbox: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -129,6 +133,7 @@ fun CaptureScreen(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
+    val direction = LocalLayoutDirection.current
     val density = LocalDensity.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -226,7 +231,7 @@ fun CaptureScreen(
         library.showPending(id, PhotoSource.Camera, frame)
         scope.launch { stripState.scrollToItem(0) }
         if (frame != null && stripBounds != Rect.Zero) {
-            val slot = firstSlotIn(stripBounds.left, stripBounds.center.y, density.density)
+            val slot = firstSlotIn(stripBounds, density.density, direction)
             flight = Flight(id, frame.asImageBitmap(), viewfinderBounds, slot)
         }
         val record =
@@ -312,6 +317,7 @@ fun CaptureScreen(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                 .padding(bottom = contentPadding.calculateBottomPadding() + 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -329,6 +335,7 @@ fun CaptureScreen(
                 items = todays,
                 state = stripState,
                 hiddenKey = hiddenSharedKey,
+                viewerPhotoId = viewerPhotoId,
                 flyingId = flight?.id,
                 onOpen = { onOpenPhoto(FILMSTRIP, it) },
                 modifier = Modifier.onGloballyPositioned { stripBounds = it.boundsInRoot().translate(-origin) },
@@ -439,7 +446,7 @@ private fun TopControls(
     Box(
         modifier
             .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.statusBars)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         CameraButton(Icons.Rounded.Settings, stringResource(R.string.capture_settings), onSettings, Modifier.align(Alignment.CenterStart))

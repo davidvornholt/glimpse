@@ -11,15 +11,18 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
 import io.github.davidvornholt.glimpse.shared.ui.PhotoThumbnail
 import io.github.davidvornholt.glimpse.shared.ui.SharedPhotoSource
+import io.github.davidvornholt.glimpse.shared.ui.scrollToPhoto
 import io.github.davidvornholt.glimpse.shared.ui.sharedPhotoKey
 
 /** The origin of shared-element keys for photos opened from the filmstrip. */
@@ -31,10 +34,14 @@ fun Filmstrip(
     items: List<GalleryItem>,
     state: LazyListState,
     hiddenKey: String?,
+    viewerPhotoId: String?,
     flyingId: String?,
     onOpen: (GalleryItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    LaunchedEffect(viewerPhotoId, items) {
+        if (viewerPhotoId != null) state.scrollToPhoto(items.indexOfFirst { it.id == viewerPhotoId })
+    }
     LazyRow(
         state = state,
         modifier = modifier.fillMaxWidth().height(STRIP_HEIGHT),
@@ -61,14 +68,16 @@ fun Filmstrip(
     }
 }
 
-/** Where the first photo sits in a strip that starts at [left]: a new photo flies there. */
+/** The new photo lands in the slot at the start of [strip]. */
 fun firstSlotIn(
-    left: Float,
-    centerY: Float,
+    strip: Rect,
     density: Float,
+    direction: LayoutDirection,
 ): Rect {
     val size = ITEM_SIZE.value * density
-    val start = left + STRIP_PADDING.value * density
+    val centerY = strip.center.y
+    val padding = STRIP_PADDING.value * density
+    val start = if (direction == LayoutDirection.Ltr) strip.left + padding else strip.right - padding - size
     return Rect(start, centerY - size / 2, start + size, centerY + size / 2)
 }
 

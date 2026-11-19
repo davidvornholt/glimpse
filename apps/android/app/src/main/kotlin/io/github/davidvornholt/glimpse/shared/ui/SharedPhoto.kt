@@ -6,6 +6,7 @@ import androidx.compose.animation.SharedTransitionScope.SharedContentConfig
 import androidx.compose.animation.SharedTransitionScope.SharedContentState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -26,6 +27,19 @@ fun sharedPhotoKey(
     origin: String,
     id: String,
 ): String = "$origin-$id"
+
+/** While the viewer covers the list, bring the return thumbnail into view below any pinned header. */
+internal suspend fun LazyListState.scrollToPhoto(
+    index: Int,
+    headerSize: Int = 0,
+) {
+    if (index < 0) return
+    val layout = layoutInfo
+    val row = layout.visibleItemsInfo.firstOrNull { it.index == index }
+    if (row == null || row.offset < layout.viewportStartOffset + headerSize || row.offset + row.size > layout.viewportEndOffset) {
+        scrollToItem(index, -headerSize)
+    }
+}
 
 /**
  * A thumbnail the viewer can grow out of. It hides while the viewer shows

@@ -341,48 +341,41 @@ class PhotoLibrary(
     }
 
     /**
-     * The best copy of a photo as a file: the phone's original while it has
-     * one, otherwise the server's original or preview, downloaded to the cache.
+     * Prefers an original on the phone or server and identifies a preview so the
+     * viewer can ask before saving or sharing the lower-resolution copy.
      */
-    suspend fun fileFor(item: GalleryItem): Pair<File, OriginalType> {
+    internal suspend fun fileFor(item: GalleryItem): PhotoExport {
         val record = captures.get(item.id)
         if (record != null) {
             val original = captures.originalFile(record)
-            if (original.isFile) return original to record.originalType
+            if (original.isFile) return PhotoExport(original, record.originalType)
         }
-        val session = sessions.currentSession() ?: throw IOException("Not paired")
-        val api = apiFor(session)
+        val api = sessions.currentSession()?.let(apiFor)
         val directory = File(cacheDir, "shared").apply { mkdirs() }
-        val remote = feed.photos.value.photos[item.id]
-        return if (remote?.hasOriginal != false) {
+
+        suspend fun downloadOriginal(): PhotoExport {
+            val server = api ?: throw IOException("Not paired")
             val target = File(directory, "glimpse-${item.id}.${item.originalType.extension}")
-            try {
-                api.download(api.originalUrl(item.id), target)
-                target to item.originalType
-            } catch (error: ApiException) {
-                if (error.tag != ApiErrorTag.NotFound) throw error
-                downloadPreview(api, item.id, directory)
-            }
-        } else {
-            downloadPreview(api, item.id, directory)
+            server.download(server.originalUrl(item.id), target)
+            return PhotoExport(target, item.originalType)
+        }
+
+        val hasOriginal =
+            api != null && feed.photos.value.photos[item.id]
+                ?.hasOriginal != false
+        return resolveExport(captures.previewFile(item.id), if (hasOriginal) ::downloadOriginal else null) {
+            val server = api ?: throw IOException("Not paired")
+            val target = File(directory, "glimpse-${item.id}-preview.jpg")
+            server.download(server.previewUrl(item.id), target)
+            target
         }
     }
 
-    private suspend fun downloadPreview(
-        api: GlimpseApi,
+    internal suspend fun saveToGallery(
         id: String,
-        directory: File,
-    ): Pair<File, OriginalType> {
-        val local = captures.previewFile(id)
-        if (local.isFile) return local to OriginalType.Jpeg
-        val target = File(directory, "glimpse-$id.jpg")
-        api.download(api.previewUrl(id), target)
-        return target to OriginalType.Jpeg
-    }
-
-    suspend fun saveToGallery(item: GalleryItem) {
-        val (file, type) = fileFor(item)
-        gallery.save(file, type.mimeType, "glimpse-${item.id}.${type.extension}")
+        photo: PhotoExport,
+    ) {
+        gallery.save(photo.file, photo.type.mimeType, photo.displayName(id))
     }
 
     /** Queue cleanup and installing the new pairing are atomic with respect to import commits. */
