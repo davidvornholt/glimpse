@@ -354,8 +354,9 @@ class PhotoLibrary(
     /** Forgets every photo on the phone, for unpairing. */
     suspend fun clear() {
         uploads.cancelAll()
-        captures.clear()
+        // Under the export lock, so a save or share that is reading an original finishes first.
         exports.withLock {
+            captures.clear()
             withContext(Dispatchers.IO) {
                 sharedDir
                     .listFiles()

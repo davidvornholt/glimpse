@@ -13,7 +13,9 @@ import io.github.davidvornholt.glimpse.shared.api.ServerEvent
 import io.github.davidvornholt.glimpse.shared.api.TEST_PHOTO_ID
 import io.github.davidvornholt.glimpse.shared.api.TEST_TIME
 import io.github.davidvornholt.glimpse.shared.api.testPhoto
+import io.github.davidvornholt.glimpse.shared.image.Gallery
 import io.github.davidvornholt.glimpse.shared.pairing.PairingLink
+import io.github.davidvornholt.glimpse.shared.photos.GalleryItem
 import io.github.davidvornholt.glimpse.shared.photos.PhotoFeed
 import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
 import io.github.davidvornholt.glimpse.shared.settings.Session
@@ -30,25 +32,33 @@ import io.github.davidvornholt.glimpse.shared.upload.UploadRunner
 import io.github.davidvornholt.glimpse.shared.upload.UploadScheduler
 import io.github.davidvornholt.glimpse.shared.upload.UploadStep
 import io.github.davidvornholt.glimpse.shared.upload.UploadTarget
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import java.io.File
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PairingBoundaryTest {
@@ -66,6 +76,7 @@ class PairingBoundaryTest {
     private val api = mock(GlimpseApi::class.java)
     private val remote = FakeServer(captures)
     private val revoked = mutableListOf<File>()
+    private var gallery = mock(Gallery::class.java)
     private lateinit var feed: PhotoFeed
     private lateinit var library: PhotoLibrary
 
@@ -85,7 +96,7 @@ class PairingBoundaryTest {
         )
         feed = PhotoFeed(sessions, { api }, backgroundScope)
         library =
-            PhotoLibrary(captures, uploads, deletes, feed, sessions, settings, mock(), mock(), UlidGenerator(), {
+            PhotoLibrary(captures, uploads, deletes, feed, sessions, settings, mock(), gallery, UlidGenerator(), {
                 api
             }, root, { revoked.add(it) }, backgroundScope)
         return PairingClaimer({ api }, sessions, library)
@@ -271,6 +282,34 @@ class PairingBoundaryTest {
             library.clear()
             assertEquals(setOf("shared.jpg", "download.jpg"), revoked.map { it.name }.toSet())
             assertFalse(shared.exists())
+        }
+
+    @Test fun `clearing waits for a save that is reading the original`() =
+        runTest {
+            val reading = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            var saved: String? = null
+            gallery =
+                mock(Gallery::class.java) { save ->
+                    reading.countDown()
+                    release.await()
+                    saved = (save.arguments[0] as File).takeIf { it.isFile }?.readText()
+                    null
+                }
+            claimer()
+            keep(record)
+            val photo = library.fileFor(GalleryItem.merge(record.id, record, null, null, null, null)!!)
+            val saving = launch(Dispatchers.IO) { library.saveToGallery(record.id, photo) }
+            withContext(Dispatchers.IO) { reading.await() }
+            val clearing = launch { library.clear() }
+            // Gives clearing the time to delete the capture if it doesn't wait for the save.
+            withContext(Dispatchers.IO) { withTimeoutOrNull(500.milliseconds) { while (captures.records.value.isNotEmpty()) delay(10) } }
+            release.countDown()
+            saving.join()
+            clearing.join()
+            assertEquals("original", saved)
+            assertNull(captures.get(record.id))
+            assertFalse(captures.directory(record.id).exists())
         }
 }
 
