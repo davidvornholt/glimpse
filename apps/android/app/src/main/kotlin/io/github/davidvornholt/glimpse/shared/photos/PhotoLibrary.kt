@@ -248,7 +248,6 @@ class PhotoLibrary(
         batchId: String? = if (count > 1) ids.next() else null,
     ) = ImageBatch(batchId, List(count) { ids.next() })
 
-    /** Stable ids make committing each image repeatable after recreation. */
     suspend fun addImages(
         uris: List<Uri>,
         source: PhotoSource,
