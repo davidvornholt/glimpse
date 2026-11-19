@@ -103,24 +103,15 @@ const hasOriginal = (photo: StoredPhoto) => photo.hasOriginal;
  * The photo, and whether [device] may write the image that [has] checks for.
  * A phone paired again comes back as a new device and carries on the uploads
  * its earlier device registered, so any phone may send an image the photo is
- * still missing, and the photo becomes that phone's. Only the photo's own
- * phone may replace an image it already has; for another phone the photo is
- * answered as it is.
+ * still missing. Only the phone that registered the photo may replace an image
+ * it already has, so an image the owner may have seen keeps its bytes; for
+ * another phone the photo is answered as it is.
  */
 const sendingTo = (
   photo: StoredPhoto,
   device: Device,
   has: (photo: StoredPhoto) => boolean,
-) => {
-  if (photo.deviceId === device.id) {
-    return { photo, send: true };
-  }
-  if (has(photo)) {
-    return { photo, send: false };
-  }
-  const taken = { ...photo, deviceId: device.id, deviceName: device.name };
-  return { photo: taken, send: true };
-};
+) => ({ photo, send: photo.deviceId === device.id || !has(photo) });
 
 /**
  * How a phone sends a photo: it registers the photo's details under an id it

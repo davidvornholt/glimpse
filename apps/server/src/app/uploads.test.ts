@@ -248,19 +248,32 @@ describe('carrying on after pairing again', () => {
     );
   });
 
-  it('takes a missing preview and gives the photo to the new pairing', async () => {
+  it('takes a missing preview and keeps the registering phone on the photo', async () => {
     await registerPhoto(server, phone, id);
     const again = (await pairPhone(server, 'Tablet')).token;
     const response = await putPreview(server, again, id);
     expect(response.status).toBe(200);
     const photo = decodePhoto(await response.json());
     expect(photo.readyAt).not.toBeNull();
-    expect(photo.deviceName).toBe('Tablet');
+    expect(photo.deviceName).toBe('Pixel');
     expect((await keptPreview()).length).toBe(photo.previewBytes ?? -1);
-    // The photo is the new pairing's now, so it may send the original too.
     expect(
       (await putOriginal(tinyJpeg(4032, 3024), 'image/jpeg', again)).status,
     ).toBe(200);
+  });
+
+  it('keeps the preview after the new pairing sends the missing original', async () => {
+    await registerPhoto(server, phone, id);
+    await putPreview(server, phone, id);
+    const before = await keptPreview();
+    const again = (await pairPhone(server, 'Tablet')).token;
+    expect(
+      (await putOriginal(tinyJpeg(4032, 3024), 'image/jpeg', again)).status,
+    ).toBe(200);
+    const response = await putPreview(server, again, id, tinyJpeg(800, 600));
+    expect(response.status).toBe(200);
+    expect(decodePhoto(await response.json()).deviceName).toBe('Pixel');
+    expect(await keptPreview()).toEqual(before);
   });
 
   it('keeps a preview the photo already has', async () => {

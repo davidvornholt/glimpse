@@ -7,7 +7,7 @@ The schemas in `packages/api/src` are the contract; the server and the CLI both 
 Every route but `/healthz` and `POST /v1/pairings/claim` takes `Authorization: Bearer <token>`. A token is either the owner's, which the CLI holds and the server knows only as a SHA-256 digest from `GLIMPSE_OWNER_TOKEN_SHA256`, or a phone's, which the phone got by claiming a pairing code. `GET /v1/me` says which.
 
 - Only the owner pairs and removes phones and waits for photos.
-- Only a phone registers photos and uploads their images. Pairing again gives a phone a new device, so it can carry on the uploads it started before: any phone may repeat a registration and send an image a photo is still missing, and the photo then belongs to it. Only the phone a photo belongs to may replace an image the photo already has; another phone's upload gets the photo back unchanged.
+- Only a phone registers photos and uploads their images. Pairing again gives a phone a new device, so it can carry on the uploads it started before: any phone may repeat a registration and send an image a photo is still missing. Only the phone that registered a photo may replace an image the photo already has; another phone's upload gets the photo back unchanged.
 - Both list, get, fetch, note, and delete photos, and both listen on `GET /v1/events`, so the phone can show what it sent and whether an agent looked.
 
 ## Pairing
