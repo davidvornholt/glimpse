@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { chmod } from 'node:fs/promises';
+import { join } from 'node:path';
 import { GlimpseApi } from '@glimpse/api/api';
 import { Authorization } from '@glimpse/api/authorization';
 import { DateTime, Effect } from 'effect';
@@ -262,6 +264,26 @@ describe('sending the original', () => {
     const response = await putOriginal(large, 'image/jpeg');
     expect(response.status).toBe(200);
     expect(decodePhoto(await response.json()).originalBytes).toBe(large.length);
+  });
+
+  it('answers a server error, not 404, when it cannot write the original', async () => {
+    await registerPhoto(server, phone, id);
+    await putPreview(server, phone, id);
+    const folder = join(server.dataDirectory, 'photos', id);
+    await chmod(folder, 0o500);
+    try {
+      const response = await putOriginal(original, 'image/jpeg');
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({
+        error: { tag: 'ServerError' },
+      });
+      const photo = await server.fetch(`/v1/photos/${id}`, {
+        headers: bearer(phone),
+      });
+      expect(decodePhoto(await photo.json()).hasOriginal).toBe(false);
+    } finally {
+      await chmod(folder, 0o700);
+    }
   });
 
   it('must have the type the photo was registered with', async () => {

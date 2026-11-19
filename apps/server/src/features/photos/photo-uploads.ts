@@ -19,7 +19,7 @@ import {
   type StoredPhoto,
   sameRegistration,
 } from './photo-records.ts';
-import { notFound, type PhotoState } from './photo-state.ts';
+import type { PhotoState } from './photo-state.ts';
 
 export type Upload = Stream.Stream<
   Uint8Array,
@@ -204,7 +204,12 @@ export const makeUploads = (state: PhotoState, retentionDays: number) => {
           Effect.catchTag('HttpApiPayloadTooLarge', (error) =>
             Effect.fail(tooLarge('original')(error)),
           ),
-          Effect.catchTag('PlatformError', () => Effect.fail(notFound(id))),
+          // The photo's folder goes when the photo is deleted, which is
+          // a 404. Any other failure, such as a full disk, is the server's
+          // to report and the phone's to retry.
+          Effect.catchTag('PlatformError', (error) =>
+            find(id).pipe(Effect.andThen(Effect.die(error))),
+          ),
         );
       return yield* keepOriginal(id, device, draft).pipe(
         Effect.ensuring(
