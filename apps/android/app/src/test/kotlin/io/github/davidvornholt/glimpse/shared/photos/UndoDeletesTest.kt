@@ -87,4 +87,26 @@ class UndoDeletesTest {
             assertNull(undo.pending.value)
             appScope.cancel()
         }
+
+    @Test
+    fun `a second delete waits when the first can't be sent instead of ending the app`() =
+        runTest {
+            val store = PreferenceDataStoreFactory.create(scope = backgroundScope) { folder.root.resolve("undo.preferences_pb") }
+            val deleted = mutableListOf<String>()
+            var failures = 1
+            val undo =
+                UndoDeletes(store, backgroundScope, { testScheduler.currentTime }) { id, _ ->
+                    if (failures-- > 0) throw IOException("No space left on device")
+                    deleted.add(id)
+                }
+            undo.start("first", server, 8000)
+            undo.start("second", server, 8000)
+            runCurrent()
+            assertEquals("first", undo.pending.value?.id)
+            assertEquals(emptyList(), deleted)
+            advanceTimeBy(8001)
+            runCurrent()
+            assertEquals(listOf("first"), deleted)
+            assertNull(undo.pending.value)
+        }
 }

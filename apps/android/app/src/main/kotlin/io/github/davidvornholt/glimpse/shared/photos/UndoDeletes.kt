@@ -78,7 +78,17 @@ class UndoDeletes(
     ) = mutex.withLock {
         val previous = saved.first()
         if (previous?.id == id) return@withLock
-        if (previous != null) delete(previous.id, previous.server)
+        if (previous != null) {
+            try {
+                delete(previous.id, previous.server)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The earlier delete stays pending and its deadline tries it again. The new one
+                // isn't started, so the photo stays visible instead of the app ending.
+                return@withLock
+            }
+        }
         store.edit {
             it[ID] = id
             it[SERVER] = server
