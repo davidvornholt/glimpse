@@ -172,7 +172,7 @@ class PairingBoundaryTest {
         assertEquals(note, uploaded.note)
         assertEquals(setOf(record.id), remote.photos.keys)
         val stored = remote.photos.getValue(uploaded.id)
-        assertEquals(FakeServer.Stored(newDevice, uploaded.metadata.copy(note = null), note, "preview", "original"), stored)
+        assertEquals(FakeServer.Stored(old.deviceId, uploaded.metadata.copy(note = null), note, "preview", "original"), stored)
         // The phone deletes its original only once the server has it.
         assertFalse(captures.originalFile(uploaded).exists())
     }
@@ -222,7 +222,7 @@ class PairingBoundaryTest {
             )
         }
 
-    @Test fun `a registration without a preview finishes under the new device`() =
+    @Test fun `a registration without a preview finishes after pairing again`() =
         runTest {
             val claimer = claimer()
             remote.registerAs(old.deviceId, record.copy(note = "caption"))
@@ -231,7 +231,7 @@ class PairingBoundaryTest {
             assertFinished(note = "caption")
         }
 
-    @Test fun `a photo whose original the old device never sent finishes under the new device`() =
+    @Test fun `a photo whose original the old device never sent finishes after pairing again`() =
         runTest {
             val claimer = claimer()
             remote.registerAs(old.deviceId, record)
@@ -241,7 +241,7 @@ class PairingBoundaryTest {
             assertFinished()
         }
 
-    @Test fun `a registration whose reply was lost finishes under the new device`() =
+    @Test fun `a registration whose reply was lost finishes after pairing again`() =
         runTest {
             val claimer = claimer()
             remote.registerAs(old.deviceId, record)
@@ -250,7 +250,7 @@ class PairingBoundaryTest {
             assertFinished()
         }
 
-    @Test fun `a registration that conflicted finishes under the new device`() =
+    @Test fun `a registration that conflicted finishes after pairing again`() =
         runTest {
             val claimer = claimer()
             remote.registerAs(old.deviceId, record)
@@ -259,7 +259,7 @@ class PairingBoundaryTest {
             assertFinished()
         }
 
-    @Test fun `a photo rejected after an earlier pairing finishes under the new device`() =
+    @Test fun `a photo rejected after an earlier pairing finishes after pairing again`() =
         runTest {
             val claimer = claimer()
             remote.registerAs(old.deviceId, record)
@@ -305,7 +305,7 @@ class PairingBoundaryTest {
             sendsOnlyTheNoteOfAnUploadedShare(null)
         }
 
-    @Test fun `an unfinished share finishes uploading under the new device on the same server`() =
+    @Test fun `an unfinished share finishes uploading after pairing again with the same server`() =
         runTest {
             val claimer = claimer()
             val shared = record.copy(source = PhotoSource.Share, server = old.server)
@@ -408,7 +408,7 @@ class PairingBoundaryTest {
             uploadAll(claimer.claim(link.copy(server = server), "Phone"))
             val stored = remote.photos.getValue(record.id)
             assertEquals("old preview", stored.preview)
-            assertEquals(newDevice, stored.device)
+            assertEquals(old.deviceId, stored.device)
             assertEquals("original", stored.original)
             assertTrue(
                 captures.records.value.values
@@ -481,7 +481,7 @@ class PairingBoundaryTest {
 
 /**
  * Keeps photos the way the server does: any device may repeat a registration and send an image a photo is
- * missing, which makes the photo that device's, and only the photo's device may replace an image it has.
+ * missing, and only the device that registered the photo may replace an image it has.
  */
 private class FakeServer(
     private val captures: CaptureStore,
@@ -553,7 +553,7 @@ private class FakeServer(
             ): Photo {
                 requests += step to record.id
                 val existing = stored(record.id)
-                if (existing.device == device || !has(existing)) photos[record.id] = change(existing).copy(device = device)
+                if (existing.device == device || !has(existing)) photos[record.id] = change(existing)
                 return photo(record.id)
             }
 
