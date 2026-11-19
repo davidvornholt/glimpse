@@ -25,7 +25,7 @@ adb shell "am start -a android.intent.action.VIEW -d '$link'"
 | Variable | Meaning |
 | --- | --- |
 | `GLIMPSE_DATA_DIR` | Where photos and paired phones are kept. Required. |
-| `GLIMPSE_PUBLIC_URL` | The address phones use, which goes into pairing links. Required. |
+| `GLIMPSE_PUBLIC_URL` | The address phones use, which goes into pairing links. Required. Glimpse needs its own origin, so the server refuses to start with an address that has a path. |
 | `GLIMPSE_OWNER_TOKEN_SHA256` | SHA-256 digests, in hex and separated by commas, of the tokens that act as the owner. Required. The server never sees an owner token it doesn't need. |
 | `GLIMPSE_RETENTION_DAYS` | How long a photo is kept. Defaults to 30. |
 | `PORT`, `GLIMPSE_HOST` | Where it listens. Default `0.0.0.0:8787`. |

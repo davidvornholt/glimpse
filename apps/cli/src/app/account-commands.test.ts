@@ -61,6 +61,17 @@ describe('glimpse login', () => {
     expect(fixture.sent).toEqual([]);
   });
 
+  it('refuses a server address with a path before reading a token', async () => {
+    const failure = await failureOf(
+      'login',
+      '--server',
+      `${testOrigin}/glimpse`,
+    );
+    expect(failure._tag).toBe('InvalidInput');
+    expect(failure.message).toContain('its own address');
+    expect(fixture.sent).toEqual([]);
+  });
+
   it('refuses a token with spaces in it', async () => {
     fixture.stdin = 'two words';
     const failure = await failureOf('login', '--server', testOrigin);

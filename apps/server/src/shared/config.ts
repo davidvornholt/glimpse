@@ -44,6 +44,18 @@ export class ServerConfig extends Context.Service<
           ),
         );
       }
+      // Pairing links carry only the origin, and the server answers at its root.
+      if (
+        publicUrl.pathname !== '/' ||
+        publicUrl.search !== '' ||
+        publicUrl.hash !== ''
+      ) {
+        return yield* Effect.die(
+          new Error(
+            `GLIMPSE_PUBLIC_URL must be Glimpse's own address, without a path, such as ${publicUrl.origin}.`,
+          ),
+        );
+      }
       if (retentionDays < 1) {
         return yield* Effect.die(
           new Error('GLIMPSE_RETENTION_DAYS must be at least 1.'),
