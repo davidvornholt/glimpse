@@ -1,6 +1,5 @@
 package io.github.davidvornholt.glimpse.features.pairing
 
-import android.os.Build
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -457,7 +456,9 @@ private fun Confirming(
     onPair: (String) -> Unit,
     onCancel: () -> Unit,
 ) {
-    val name = rememberTextFieldState(current?.deviceName ?: Build.MODEL.take(MAX_NAME))
+    val context = LocalContext.current
+    val suggested = remember { current?.deviceName ?: suggestedDeviceName(context) }
+    val name = rememberTextFieldState(suggested)
     val trimmed = name.text.trim()
     val valid = trimmed.isNotEmpty() && trimmed.length <= MAX_NAME
     Page {
@@ -669,7 +670,6 @@ private fun Notice(
 
 private fun hostOf(server: String): String = runCatching { URI(server).host }.getOrNull() ?: server
 
-private const val MAX_NAME = 64
 private const val HINT_MILLIS = 2500L
 private const val DONE_MILLIS = 1600L
 private const val MORPH_MILLIS = 2400
