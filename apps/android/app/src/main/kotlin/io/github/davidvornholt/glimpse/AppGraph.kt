@@ -12,6 +12,7 @@ import io.github.davidvornholt.glimpse.shared.image.Gallery
 import io.github.davidvornholt.glimpse.shared.image.ImageProcessor
 import io.github.davidvornholt.glimpse.shared.photos.PhotoFeed
 import io.github.davidvornholt.glimpse.shared.photos.PhotoLibrary
+import io.github.davidvornholt.glimpse.shared.photos.UndoAlarm
 import io.github.davidvornholt.glimpse.shared.settings.Session
 import io.github.davidvornholt.glimpse.shared.settings.SessionState
 import io.github.davidvornholt.glimpse.shared.settings.SessionStore
@@ -62,6 +63,7 @@ class AppGraph(
                 PreferenceDataStoreFactory.create {
                     context.preferencesDataStoreFile("undo")
                 },
+            undoAlarm = UndoAlarm(context),
             uploads = uploads,
             deletes = deletes,
             feed = feed,

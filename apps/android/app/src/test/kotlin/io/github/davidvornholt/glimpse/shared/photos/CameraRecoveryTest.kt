@@ -116,6 +116,7 @@ class CameraRecoveryTest {
         PhotoLibrary(
             captures,
             PreferenceDataStoreFactory.create(scope = backgroundScope) { File(root, "undo.preferences_pb") },
+            mock(),
             uploads,
             deletes,
             PhotoFeed(sessions, { error("Recovery needs no server") }, backgroundScope),

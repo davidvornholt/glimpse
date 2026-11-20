@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { chmod } from 'node:fs/promises';
+import { join } from 'node:path';
 import { GlimpseApi } from '@glimpse/api/api';
 import { Authorization } from '@glimpse/api/authorization';
 import { DateTime, Effect } from 'effect';
@@ -34,10 +36,14 @@ afterEach(async () => {
 
 const id = testPhotoId(1);
 
-const putOriginal = (body: Uint8Array<ArrayBuffer>, contentType: string) =>
+const putOriginal = (
+  body: Uint8Array<ArrayBuffer>,
+  contentType: string,
+  token = phone,
+) =>
   server.fetch(`/v1/photos/${id}/original`, {
     method: 'PUT',
-    headers: { ...bearer(phone), 'content-type': contentType },
+    headers: { ...bearer(token), 'content-type': contentType },
     body,
   });
 
@@ -179,13 +185,6 @@ describe('sending the preview', () => {
     expect((await putPreview(server, phone, id)).status).toBe(404);
   });
 
-  it('may come only from the phone that registered the photo', async () => {
-    await registerPhoto(server, phone, id);
-    const other = (await pairPhone(server, 'Tablet')).token;
-    const response = await putPreview(server, other, id);
-    expect(response.status).toBe(403);
-  });
-
   it('refuses what is not a JPEG', async () => {
     await registerPhoto(server, phone, id);
     const response = await putPreview(
@@ -233,6 +232,86 @@ describe('sending the preview', () => {
   });
 });
 
+describe('carrying on after pairing again', () => {
+  const keptOriginal = async () => {
+    const response = await server.fetch(`/v1/photos/${id}/original`, {
+      headers: bearer(testOwnerToken),
+    });
+    return new Uint8Array(await response.arrayBuffer());
+  };
+
+  it('takes the same registration from the new pairing and refuses other details', async () => {
+    await registerPhoto(server, phone, id);
+    const again = (await pairPhone(server, 'Pixel')).token;
+    const response = await registerPhoto(server, again, id);
+    expect(response.status).toBe(200);
+    expect((await registerPhoto(server, again, id, { width: 10 })).status).toBe(
+      409,
+    );
+  });
+
+  it('takes a missing preview and keeps the registering phone on the photo', async () => {
+    await registerPhoto(server, phone, id);
+    const again = (await pairPhone(server, 'Tablet')).token;
+    const response = await putPreview(server, again, id);
+    expect(response.status).toBe(200);
+    const photo = decodePhoto(await response.json());
+    expect(photo.readyAt).not.toBeNull();
+    expect(photo.deviceName).toBe('Pixel');
+    expect((await keptPreview()).length).toBe(photo.previewBytes ?? -1);
+    expect(
+      (await putOriginal(tinyJpeg(4032, 3024), 'image/jpeg', again)).status,
+    ).toBe(200);
+  });
+
+  it('keeps the preview after the new pairing sends the missing original', async () => {
+    await registerPhoto(server, phone, id);
+    await putPreview(server, phone, id);
+    const before = await keptPreview();
+    const again = (await pairPhone(server, 'Tablet')).token;
+    expect(
+      (await putOriginal(tinyJpeg(4032, 3024), 'image/jpeg', again)).status,
+    ).toBe(200);
+    const response = await putPreview(server, again, id, tinyJpeg(800, 600));
+    expect(response.status).toBe(200);
+    expect(decodePhoto(await response.json()).deviceName).toBe('Pixel');
+    expect(await keptPreview()).toEqual(before);
+  });
+
+  it('keeps a preview the photo already has', async () => {
+    await registerPhoto(server, phone, id);
+    await putPreview(server, phone, id);
+    const before = await keptPreview();
+    const other = (await pairPhone(server, 'Tablet')).token;
+    const response = await putPreview(server, other, id, tinyJpeg(800, 600));
+    expect(response.status).toBe(200);
+    expect(decodePhoto(await response.json()).deviceName).toBe('Pixel');
+    expect(await keptPreview()).toEqual(before);
+  });
+
+  it('takes a missing original and keeps one the photo already has', async () => {
+    await registerPhoto(server, phone, id);
+    await putPreview(server, phone, id);
+    const again = (await pairPhone(server, 'Pixel')).token;
+    const original = tinyJpeg(4032, 3024);
+    const first = await putOriginal(original, 'image/jpeg', again);
+    expect(first.status).toBe(200);
+    expect(decodePhoto(await first.json()).hasOriginal).toBe(true);
+    const other = (await pairPhone(server, 'Tablet')).token;
+    const second = await putOriginal(tinyJpeg(2000, 1500), 'image/jpeg', other);
+    expect(second.status).toBe(200);
+    expect(await keptOriginal()).toEqual(original);
+  });
+
+  it('still needs the photo to exist', async () => {
+    const again = (await pairPhone(server, 'Pixel')).token;
+    expect((await putPreview(server, again, id)).status).toBe(404);
+    expect(
+      (await putOriginal(tinyJpeg(4032, 3024), 'image/jpeg', again)).status,
+    ).toBe(404);
+  });
+});
+
 describe('sending the original', () => {
   const original = tinyJpeg(4032, 3024);
 
@@ -262,6 +341,26 @@ describe('sending the original', () => {
     const response = await putOriginal(large, 'image/jpeg');
     expect(response.status).toBe(200);
     expect(decodePhoto(await response.json()).originalBytes).toBe(large.length);
+  });
+
+  it('answers a server error, not 404, when it cannot write the original', async () => {
+    await registerPhoto(server, phone, id);
+    await putPreview(server, phone, id);
+    const folder = join(server.dataDirectory, 'photos', id);
+    await chmod(folder, 0o500);
+    try {
+      const response = await putOriginal(original, 'image/jpeg');
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({
+        error: { tag: 'ServerError' },
+      });
+      const photo = await server.fetch(`/v1/photos/${id}`, {
+        headers: bearer(phone),
+      });
+      expect(decodePhoto(await photo.json()).hasOriginal).toBe(false);
+    } finally {
+      await chmod(folder, 0o700);
+    }
   });
 
   it('must have the type the photo was registered with', async () => {

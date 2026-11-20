@@ -2,7 +2,6 @@ import type { Caller } from '@glimpse/api/caller';
 import type { Device } from '@glimpse/api/device';
 import {
   type Conflict,
-  type Forbidden,
   InvalidRequest,
   NotFound,
   type TooLarge,
@@ -30,7 +29,7 @@ export type PageQuery = {
   readonly since: DateTime.Utc | undefined;
 };
 
-type UploadError = NotFound | Forbidden | InvalidRequest | TooLarge;
+type UploadError = NotFound | InvalidRequest | TooLarge;
 
 export type PhotoImage = {
   readonly file: string;
