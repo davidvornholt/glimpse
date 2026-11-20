@@ -78,6 +78,24 @@ describe('gitHistory', () => {
     expect(changeSubjects(android, 'android-v1.1')).toEqual(['fix: sign it']);
   });
 
+  it('releases nothing when only the smoke test changed', async () => {
+    const root = repository();
+    await commit(root, 'apps/android/app/src/main/Main.kt', 'feat: the app');
+    run(root, ['tag', 'android-v1.1']);
+    await commit(
+      root,
+      'apps/android/scripts/release-smoke.sh',
+      'ci: the smoke test',
+    );
+    const android = `${root}/apps/android`;
+
+    expect(planRelease(gitHistory(android))).toEqual({
+      kind: 'skip',
+      reason: 'the app has not changed since android-v1.1',
+    });
+    expect(changeSubjects(android, 'android-v1.1')).toEqual([]);
+  });
+
   it('skips a commit older than the newest release', async () => {
     const root = repository();
     const older = await commit(root, 'apps/android/app/A.kt', 'feat: a');
