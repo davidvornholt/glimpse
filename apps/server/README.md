@@ -25,7 +25,7 @@ adb shell "am start -a android.intent.action.VIEW -d '$link'"
 | Variable | Meaning |
 | --- | --- |
 | `GLIMPSE_DATA_DIR` | Where photos and paired phones are kept. Required. |
-| `GLIMPSE_PUBLIC_URL` | The address phones use, which goes into pairing links. Required. |
+| `GLIMPSE_PUBLIC_URL` | The address phones use, which goes into pairing links. Required. Glimpse needs its own origin, so the server refuses to start with an address that has a path. |
 | `GLIMPSE_OWNER_TOKEN_SHA256` | SHA-256 digests, in hex and separated by commas, of the tokens that act as the owner. Required. The server never sees an owner token it doesn't need. |
 | `GLIMPSE_RETENTION_DAYS` | How long a photo is kept. Defaults to 30. |
 | `PORT`, `GLIMPSE_HOST` | Where it listens. Default `0.0.0.0:8787`. |
@@ -39,7 +39,7 @@ printf %s "$token" | sha256sum | cut -d' ' -f1
 
 ## Storage
 
-Each photo is a directory under `photos/<id>/` holding `meta.json`, `preview.jpg`, and the original. Paired phones are in `devices.json`, which keeps only the SHA-256 of each phone's token. Every file is written to a temporary name and renamed, so a crash never leaves half a file in place. At start-up the server loads every photo, skips records it can't read with a warning, and deletes leftover drafts.
+Each photo is a directory under `photos/<id>/` holding `meta.json`, `preview.jpg`, and the original. Paired phones are in `devices.json`, which keeps only the SHA-256 of each phone's token. Every file is written to a temporary name and renamed, so a crash never leaves half a file in place. Give the server a data directory its own user owns. It makes new directories `0700` and new files `0600` whatever the umask, and at start-up it takes group and other access away from the data directory, or stops if it can't. At start-up the server loads every photo, skips records it can't read with a warning, and deletes leftover drafts.
 
 ## Container image
 

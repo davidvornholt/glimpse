@@ -7,7 +7,8 @@ const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
  * The origin of a Glimpse server. Only a server on this machine may use plain
- * HTTP, because the owner token travels in every request.
+ * HTTP, because the owner token travels in every request. An address with a
+ * path is refused, because Glimpse answers only at the root of its origin.
  */
 export const serverOrigin = (value: string) =>
   Effect.gen(function* () {
@@ -23,6 +24,11 @@ export const serverOrigin = (value: string) =>
     if (url.protocol === 'http:' && !loopbackHosts.has(url.hostname)) {
       return yield* new InvalidInput({
         message: `Use https for ${url.host}. Plain http only works for a server on this machine.`,
+      });
+    }
+    if (url.pathname !== '/' || url.search !== '' || url.hash !== '') {
+      return yield* new InvalidInput({
+        message: `Glimpse needs its own address, without a path such as ${url.pathname}. Pass just ${url.origin}, and serve Glimpse there.`,
       });
     }
     return url.origin;
