@@ -2,7 +2,7 @@
 
 # The server compiles to one executable, so the image holds only that file
 # and the C++ runtime Bun's Alpine build links against.
-FROM docker.io/oven/bun:1.4.3-alpine AS build
+FROM docker.io/oven/bun:1.4.5-alpine AS build
 WORKDIR /app
 
 COPY package.json bun.lock ./
