@@ -64,7 +64,8 @@ let
         )
     ) (builtins.attrValues lock.packages)
   );
-  # The CLI's runtime dependencies only; the compiled binary bundles them.
+  # The workspaces' production dependencies; the compiled CLI bundles the ones
+  # it uses.
   # Bun installs them without a network from a registry on the build's
   # loopback that serves the fetched tarballs. Filling Bun's install cache
   # directly would need its folder names, which hold an internal hash of a
