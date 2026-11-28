@@ -2,6 +2,7 @@
 # in share/glimpse/skills/<skill>. passthru.skills names it.
 {
   bun,
+  fetchurl,
   lib,
   stdenvNoCC,
   version,
@@ -13,19 +14,75 @@ let
   skills = builtins.attrNames (
     lib.filterAttrs (_name: type: type == "directory") (builtins.readDir ../apps/cli/skills)
   );
+  # The registry packages bun.lock records, each fetched by the integrity hash
+  # the lockfile holds, so a change to bun.lock needs no other edit here.
+  # Nix's JSON reader rejects the trailing commas Bun writes, so they go first;
+  # no string in bun.lock holds a comma before a closing bracket.
+  lock = builtins.fromJSON (
+    lib.concatMapStrings (part: if builtins.isList part then builtins.head part else part) (
+      builtins.split ",[[:space:]]*([]}])" (builtins.readFile ../bun.lock)
+    )
+  );
+  # An os or cpu field lists the values a package installs on, or, prefixed
+  # with "!", the ones it doesn't. Packages for other platforms aren't fetched.
+  allows =
+    field: value:
+    let
+      values = lib.toList field;
+    in
+    values == [ ]
+    || lib.elem value values
+    || (lib.all (lib.hasPrefix "!") values && !lib.elem "!${value}" values);
+  cpu =
+    {
+      x86_64 = "x64";
+      aarch64 = "arm64";
+    }
+    .${stdenvNoCC.hostPlatform.parsed.cpu.name};
+  lockPackages = lib.concatMap (
+    entry:
+    let
+      parsed = builtins.match "(@?[^@]+)@(.*)" (builtins.head entry);
+      name = builtins.elemAt parsed 0;
+      version = builtins.elemAt parsed 1;
+      info = builtins.elemAt entry 2;
+    in
+    if lib.hasPrefix "workspace:" version then
+      [ ]
+    else if
+      builtins.length entry != 4
+      || builtins.elemAt entry 1 != ""
+      || builtins.match "[0-9]+[.][0-9]+[.][0-9]+" version == null
+    then
+      # Bun names the cache entry of a prerelease, git, tarball or
+      # other-registry package differently, and this doesn't reproduce that.
+      throw
+        "nix/package.nix can only install release versions from the default npm registry, not ${builtins.head entry} from bun.lock"
+    else
+      lib.optional (allows (info.os or [ ]) "linux" && allows (info.cpu or [ ]) cpu) {
+        # The folder Bun's install cache keeps this package in.
+        cacheEntry = "${name}@${version}@@@1";
+        tarball = fetchurl {
+          url = "https://registry.npmjs.org/${name}/-/${baseNameOf name}-${version}.tgz";
+          hash = builtins.elemAt entry 3;
+        };
+      }
+  ) (builtins.attrValues lock.packages);
   # The CLI's runtime dependencies only; the compiled binary bundles them.
-  # The name holds Bun's version and a digest of bun.lock, so a change to either
-  # installs them again and fails on a stale hash instead of silently reusing
-  # the old dependencies.
-  lockDigest = builtins.substring 0 12 (builtins.hashFile "sha256" ../bun.lock);
+  # Bun installs them from a cache of the fetched packages, without a network.
   nodeModules = stdenvNoCC.mkDerivation {
-    name = "${pname}-node-modules-bun-${bun.version}-${lockDigest}";
+    name = "${pname}-node-modules";
     inherit src;
     nativeBuildInputs = [ bun ];
     dontConfigure = true;
     buildPhase = ''
       runHook preBuild
       export HOME=$TMPDIR BUN_INSTALL_CACHE_DIR=$TMPDIR/bun-cache
+      ${lib.concatMapStrings (package: ''
+        mkdir -p "$BUN_INSTALL_CACHE_DIR/${package.cacheEntry}"
+        tar -xzf ${package.tarball} --strip-components=1 --no-same-owner -C "$BUN_INSTALL_CACHE_DIR/${package.cacheEntry}"
+      '') lockPackages}
+      chmod -R u+rwX "$BUN_INSTALL_CACHE_DIR"
       bun install --frozen-lockfile --production --ignore-scripts --no-progress
       runHook postBuild
     '';
@@ -36,13 +93,6 @@ let
       runHook postInstall
     '';
     dontFixup = true;
-    # A change to bun.lock or to the Bun version in package.json's
-    # packageManager needs a new hash here. The failing build prints it after
-    # "got:".
-    outputHash = "sha256-xs91U2AD+nQE5ylfxZZqFyqq/o6ftt/jIvULsKhpJFg=";
-    outputHashAlgo = "sha256";
-    outputHashMode = "recursive";
-    impureEnvVars = lib.fetchers.proxyImpureEnvVars;
   };
 in
 stdenvNoCC.mkDerivation {
