@@ -39,51 +39,69 @@ let
       aarch64 = "arm64";
     }
     .${stdenvNoCC.hostPlatform.parsed.cpu.name};
-  lockPackages = lib.concatMap (
-    entry:
-    let
-      parsed = builtins.match "(@?[^@]+)@(.*)" (builtins.head entry);
-      name = builtins.elemAt parsed 0;
-      version = builtins.elemAt parsed 1;
-      info = builtins.elemAt entry 2;
-    in
-    if lib.hasPrefix "workspace:" version then
-      [ ]
-    else if
-      builtins.length entry != 4
-      || builtins.elemAt entry 1 != ""
-      || builtins.match "[0-9]+[.][0-9]+[.][0-9]+" version == null
-    then
-      # Bun names the cache entry of a prerelease, git, tarball or
-      # other-registry package differently, and this doesn't reproduce that.
-      throw
-        "nix/package.nix can only install release versions from the default npm registry, not ${builtins.head entry} from bun.lock"
-    else
-      lib.optional (allows (info.os or [ ]) "linux" && allows (info.cpu or [ ]) cpu) {
-        # The folder Bun's install cache keeps this package in.
-        cacheEntry = "${name}@${version}@@@1";
-        tarball = fetchurl {
-          url = "https://registry.npmjs.org/${name}/-/${baseNameOf name}-${version}.tgz";
-          hash = builtins.elemAt entry 3;
-        };
-      }
-  ) (builtins.attrValues lock.packages);
+  # The tarball path Bun requests from a registry for each package, and the
+  # fetched tarball it gets there.
+  tarballs = lib.listToAttrs (
+    lib.concatMap (
+      entry:
+      let
+        parsed = builtins.match "(@?[^@]+)@(.*)" (builtins.head entry);
+        name = builtins.elemAt parsed 0;
+        version = builtins.elemAt parsed 1;
+        info = builtins.elemAt entry 2;
+        tarball = "/${name}/-/${baseNameOf name}-${version}.tgz";
+      in
+      if lib.hasPrefix "workspace:" version then
+        [ ]
+      else if builtins.length entry != 4 || builtins.elemAt entry 1 != "" then
+        throw "nix/package.nix can only install packages from the default npm registry, not ${builtins.head entry} from bun.lock"
+      else
+        lib.optional (allows (info.os or [ ]) "linux" && allows (info.cpu or [ ]) cpu) (
+          lib.nameValuePair tarball (fetchurl {
+            url = "https://registry.npmjs.org${tarball}";
+            hash = builtins.elemAt entry 3;
+          })
+        )
+    ) (builtins.attrValues lock.packages)
+  );
   # The CLI's runtime dependencies only; the compiled binary bundles them.
-  # Bun installs them from a cache of the fetched packages, without a network.
+  # Bun installs them without a network from a registry on the build's
+  # loopback that serves the fetched tarballs. Filling Bun's install cache
+  # directly would need its folder names, which hold an internal hash of a
+  # prerelease version.
   nodeModules = stdenvNoCC.mkDerivation {
     name = "${pname}-node-modules";
     inherit src;
     nativeBuildInputs = [ bun ];
     dontConfigure = true;
+    tarballs = builtins.toJSON tarballs;
+    passAsFile = [ "tarballs" ];
     buildPhase = ''
       runHook preBuild
       export HOME=$TMPDIR BUN_INSTALL_CACHE_DIR=$TMPDIR/bun-cache
-      ${lib.concatMapStrings (package: ''
-        mkdir -p "$BUN_INSTALL_CACHE_DIR/${package.cacheEntry}"
-        tar -xzf ${package.tarball} --strip-components=1 --no-same-owner -C "$BUN_INSTALL_CACHE_DIR/${package.cacheEntry}"
-      '') lockPackages}
-      chmod -R u+rwX "$BUN_INSTALL_CACHE_DIR"
-      bun install --frozen-lockfile --production --ignore-scripts --no-progress
+      bun -e "
+        const [tarballs, portFile] = process.argv.slice(-2);
+        const files = await Bun.file(tarballs).json();
+        const server = Bun.serve({
+          hostname: '127.0.0.1',
+          port: 0,
+          fetch(request) {
+            const path = decodeURIComponent(new URL(request.url).pathname);
+            if (Object.hasOwn(files, path)) return new Response(Bun.file(files[path]));
+            console.error('The Nix build has no package at ' + path);
+            return new Response(null, { status: 404 });
+          },
+        });
+        await Bun.write(portFile, String(server.port));
+      " "$tarballsPath" "$TMPDIR/registry-port" &
+      registry=$!
+      while [ ! -s "$TMPDIR/registry-port" ]; do
+        kill -0 "$registry"
+        sleep 0.1
+      done
+      BUN_CONFIG_REGISTRY="http://127.0.0.1:$(cat "$TMPDIR/registry-port")/" \
+        bun install --frozen-lockfile --production --ignore-scripts --no-progress
+      kill "$registry"
       runHook postBuild
     '';
     installPhase = ''
